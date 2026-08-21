@@ -25,6 +25,7 @@ from .const import (
     CONF_TOMORROW_PV_SENSOR,
     CONF_WALLBOX_INCLUDED_IN_HOUSE,
     CONF_WALLBOX_POWER_SENSOR,
+    PV_FORECAST_P10_ATTR,
 )
 from .control_engine import MaestroState
 
@@ -68,8 +69,15 @@ class CoordinatorSensorsMixin:
             grid = -grid
         batt = self._read_power_w(opts[CONF_BATTERY_POWER_SENSOR], required=True)
         forecast: float | None = None
+        forecast_p10: float | None = None
         if opts.get(CONF_PV_FORECAST_ENABLED) and opts.get(CONF_PV_FORECAST_SENSOR):
             forecast = self._read_float(opts[CONF_PV_FORECAST_SENSOR], required=False)
+            # Konservative P10-Restprognose aus dem Sensor-Attribut (Solcast:
+            # "estimate10"). Fehlt das Attribut (andere Quelle) → None, das Gate
+            # fällt dann auf den P50-State zurück.
+            forecast_p10 = self._read_attr_float(
+                opts[CONF_PV_FORECAST_SENSOR], PV_FORECAST_P10_ATTR
+            )
 
         # F1+: Forward-Looking inputs (morgen PV + Wochentags-Verbrauch)
         tomorrow_pv: float | None = None
@@ -107,6 +115,7 @@ class CoordinatorSensorsMixin:
             grid_power=grid,
             battery_power=batt,
             pv_forecast_remaining_kwh=forecast,
+            pv_forecast_remaining_p10_kwh=forecast_p10,
             wallbox_power=wallbox,
             evcc_charging=evcc_charging,
             evcc_mode=evcc_mode,
@@ -170,6 +179,18 @@ class CoordinatorSensorsMixin:
         except (ValueError, TypeError) as err:
             if required:
                 raise ValueError(f"Entity '{entity_id}' hat keinen numerischen Wert: {state.state}") from err
+            return None
+
+
+    def _read_attr_float(self, entity_id: str, attr: str) -> float | None:
+        """Read a numeric attribute from an entity, or None if missing/invalid."""
+        state = self.hass.states.get(entity_id)
+        if state is None:
+            return None
+        val = state.attributes.get(attr)
+        try:
+            return float(val)
+        except (TypeError, ValueError):
             return None
 
 

@@ -2758,3 +2758,145 @@ class TestSpreadingActiveHelper:
             pv_forecast_today_kwh=100.0,
         )
         assert spreading_active(p, s) is True
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Forecast-Gate: P10-Restprognose steuert Spreading vs. Akku-Priorität
+# ──────────────────────────────────────────────────────────────────────────────
+
+from custom_components.e3dc_maestro.control_engine import _is_forecast_insufficient
+
+
+def _forecast_gate_params(**overrides) -> MaestroParams:
+    """Spreading an, PV-Forecast an, Schwacher-PV-Tag AUS (isoliert das Gate)."""
+    base = dict(
+        installed_kwp=20.0,
+        max_charge_power=9000,
+        min_charge_power=200,
+        lower_corridor=500,
+        upper_corridor=9000,
+        charge_target=100,
+        summer_charge_end=18.5,
+        battery_capacity_kwh=17.5,
+        spreading_enabled=True,
+        spreading_target_soc=100.0,
+        lower_corridor_pause_enabled=True,
+        pv_forecast_enabled=True,
+        pv_forecast_safety_factor=1.5,
+        low_yield_priority_enabled=False,   # isoliert: nur Forecast-Gate
+        fast_charge_floor_enabled=False,    # kein fast_floor-Intercept
+        ht_enabled=False,
+    )
+    base.update(overrides)
+    return MaestroParams(**base)
+
+
+class TestIsForecastInsufficient:
+    """Unit-Tests der reinen Gate-Funktion (explizites target)."""
+
+    def test_p10_below_need_is_insufficient(self):
+        p = _forecast_gate_params()
+        s = MaestroState(
+            soc=30, pv_power=4000, house_power=800, grid_power=0, battery_power=0,
+            pv_forecast_remaining_p10_kwh=5.0, pv_forecast_remaining_kwh=40.0,
+        )
+        # needed = (90-30)/100 * 17.5 = 10.5; min_req = 15.75; 5 < 15.75 → True
+        assert _is_forecast_insufficient(s, p, target=90.0) is True
+
+    def test_p10_above_need_is_sufficient(self):
+        p = _forecast_gate_params()
+        s = MaestroState(
+            soc=30, pv_power=4000, house_power=800, grid_power=0, battery_power=0,
+            pv_forecast_remaining_p10_kwh=30.0, pv_forecast_remaining_kwh=40.0,
+        )
+        assert _is_forecast_insufficient(s, p, target=90.0) is False
+
+    def test_falls_back_to_p50_when_p10_missing(self):
+        p = _forecast_gate_params()
+        s = MaestroState(
+            soc=30, pv_power=4000, house_power=800, grid_power=0, battery_power=0,
+            pv_forecast_remaining_p10_kwh=None, pv_forecast_remaining_kwh=2.0,
+        )
+        assert _is_forecast_insufficient(s, p, target=90.0) is True
+
+    def test_inactive_without_any_forecast_data(self):
+        p = _forecast_gate_params()
+        s = MaestroState(
+            soc=30, pv_power=4000, house_power=800, grid_power=0, battery_power=0,
+            pv_forecast_remaining_p10_kwh=None, pv_forecast_remaining_kwh=None,
+        )
+        assert _is_forecast_insufficient(s, p, target=90.0) is False
+
+    def test_inactive_when_forecast_disabled(self):
+        p = _forecast_gate_params(pv_forecast_enabled=False)
+        s = MaestroState(
+            soc=30, pv_power=4000, house_power=800, grid_power=0, battery_power=0,
+            pv_forecast_remaining_p10_kwh=2.0,
+        )
+        assert _is_forecast_insufficient(s, p, target=90.0) is False
+
+    def test_inactive_when_battery_at_target(self):
+        p = _forecast_gate_params()
+        s = MaestroState(
+            soc=100, pv_power=4000, house_power=800, grid_power=0, battery_power=0,
+            pv_forecast_remaining_p10_kwh=1.0,
+        )
+        assert _is_forecast_insufficient(s, p, target=90.0) is False
+
+
+class TestForecastGateDecide:
+    """End-to-end ``decide()``: unzureichende P10-Prognose ⇒ Akku-Priorität."""
+
+    def test_insufficient_forecast_triggers_battery_priority(self):
+        p = _forecast_gate_params()
+        s = MaestroState(
+            soc=40, pv_power=4000, house_power=800, grid_power=0, battery_power=0,
+            pv_forecast_remaining_p10_kwh=3.0, pv_forecast_remaining_kwh=40.0,
+        )
+        d = decide(s, p, _now(6, 15, 11))
+        assert d.phase == PHASE_CORRIDOR
+        assert d.charge_power_limit == p.max_charge_power
+        assert "Prognose unzureichend" in d.reason
+
+    def test_sufficient_p10_keeps_spreading_throttle(self):
+        p = _forecast_gate_params()
+        s = MaestroState(
+            soc=51, pv_power=3000, house_power=600, grid_power=0, battery_power=0,
+            pv_forecast_remaining_p10_kwh=80.0, pv_forecast_remaining_kwh=95.0,
+        )
+        d = decide(s, p, _now(6, 15, 11))
+        assert "Prognose unzureichend" not in (d.reason or "")
+        assert d.charge_power_limit is not None
+        assert d.charge_power_limit < p.max_charge_power
+
+    def test_p10_missing_uses_p50_fallback(self):
+        p = _forecast_gate_params()
+        s = MaestroState(
+            soc=40, pv_power=4000, house_power=800, grid_power=0, battery_power=0,
+            pv_forecast_remaining_p10_kwh=None, pv_forecast_remaining_kwh=2.0,
+        )
+        d = decide(s, p, _now(6, 15, 11))
+        assert d.phase == PHASE_CORRIDOR
+        assert "Prognose unzureichend" in d.reason
+
+    def test_no_forecast_data_keeps_normal_spreading(self):
+        p = _forecast_gate_params()
+        s = MaestroState(
+            soc=51, pv_power=3000, house_power=600, grid_power=0, battery_power=0,
+            pv_forecast_remaining_p10_kwh=None, pv_forecast_remaining_kwh=None,
+        )
+        d = decide(s, p, _now(6, 15, 11))
+        assert "Prognose unzureichend" not in (d.reason or "")
+        assert d.charge_power_limit is not None
+        assert d.charge_power_limit < p.max_charge_power
+
+    def test_forecast_disabled_keeps_normal_spreading(self):
+        p = _forecast_gate_params(pv_forecast_enabled=False)
+        s = MaestroState(
+            soc=51, pv_power=3000, house_power=600, grid_power=0, battery_power=0,
+            pv_forecast_remaining_p10_kwh=2.0,
+        )
+        d = decide(s, p, _now(6, 15, 11))
+        assert "Prognose unzureichend" not in (d.reason or "")
+        assert d.charge_power_limit is not None
+        assert d.charge_power_limit < p.max_charge_power

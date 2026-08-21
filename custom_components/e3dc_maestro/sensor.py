@@ -320,6 +320,22 @@ SENSOR_DESCRIPTIONS: tuple[MaestroSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda coord: coord.low_yield_ratio,
     ),
+    # Forecast-Gate: konservative Rest-PV-Prognose (P10) für dynamisches Spreading
+    MaestroSensorDescription(
+        key="pv_forecast_remaining_p10",
+        name="PV-Restprognose (P10)",
+        icon="mdi:weather-partly-cloudy",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda coord: (
+            round(coord.data["state"].pv_forecast_remaining_p10_kwh, 3)
+            if coord.data
+            and "state" in coord.data
+            and coord.data["state"].pv_forecast_remaining_p10_kwh is not None
+            else None
+        ),
+    ),
     # E3/Phase 1: Curtailment avoided today (Diagnose; kombiniert in pv_saved_today)
     MaestroSensorDescription(
         key="curtailment_avoided_today",
@@ -791,6 +807,17 @@ class MaestroSensor(CoordinatorEntity[E3DCMaestroCoordinator], SensorEntity):
                 "window_minutes": round(len(window) * interval_s / 60, 1),
                 "samples": len(window),
                 "samples_required": coord._AUTONOMY_MIN_SAMPLES,
+            }
+        if key == "pv_forecast_remaining_p10":
+            coord = self.coordinator
+            state = coord.data.get("state") if coord.data else None
+            p = coord._params
+            if state is None:
+                return None
+            p50 = state.pv_forecast_remaining_kwh
+            return {
+                "p50_remaining_kwh": round(p50, 3) if p50 is not None else None,
+                "safety_factor": p.pv_forecast_safety_factor,
             }
         if key == "seasonal_reserve_soc":
             p = self.coordinator._params

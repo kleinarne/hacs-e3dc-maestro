@@ -1198,11 +1198,20 @@ views:
 
       - type: entities
         title: Ladeverteilung (Spreading)
+        subtitle: Wird dynamisch pausiert, wenn die konservative PV-Prognose (P10) den Restbedarf nicht deckt
         entities:
           - entity: switch.e3dc_maestro_ladeverteilung_spreading
             name: Spreading aktiv
           - entity: number.e3dc_maestro_spreading_ziel_soc
             name: "Spreading-Ziel SoC (%)"
+          - entity: sensor.e3dc_maestro_pv_restprognose_p10
+            name: "PV-Restprognose (P10)"
+            secondary_info: last-changed
+          - type: attribute
+            entity: sensor.e3dc_maestro_pv_restprognose_p10
+            attribute: p50_remaining_kwh
+            name: "PV-Restprognose (P50)"
+            suffix: " kWh"
           - type: button
             name: "ℹ️  Hilfe zu diesem Abschnitt"
             icon: mdi:help-circle-outline
@@ -2368,6 +2377,25 @@ views:
           zügig geladen werden sollen (CC/CV-Übergang des Akkus).
           
           **Standard:** entspricht Ladeende SoC (z. B. 95 %)
+          
+          ---
+          
+          ### Dynamisches Prognose-Gate (P10)
+          
+          Spreading streckt die Ladung nur, wenn die erwartete Rest-PV den Ladebedarf
+          zuverlässig deckt. Dafür prüft Maestro die **konservative** Prognose (P10 –
+          10%-Perzentil, d. h. der pessimistische Fall) gegen den Restbedarf:
+          
+            Restbedarf_kWh = (Ziel_SoC - akt_SoC) / 100 × Kapazität_kWh
+            nötig_kWh      = Restbedarf_kWh × Sicherheitsfaktor
+          
+          Ist die **P10-Restprognose < nötig_kWh**, wird Spreading automatisch pausiert
+          und der Akku erhält Priorität (voller PV-Überschuss statt Einspeisung). So wird
+          verhindert, dass an unsicheren Tagen eingespeist wird, während der Akku leer bleibt.
+          
+          Die Sensoren **PV-Restprognose (P10)** und **(P50)** im Abschnitt „Ladeverteilung"
+          zeigen die Prognosewerte, auf denen diese Entscheidung basiert. Fehlt der
+          P10-Wert an der Prognosequelle, fällt Maestro automatisch auf P50 zurück.
 
   - title: "Hilfe: Abregelschutz"
     path: help-curtailment

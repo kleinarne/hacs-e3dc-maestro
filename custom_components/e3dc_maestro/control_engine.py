@@ -38,7 +38,10 @@ class MaestroState:
     house_power: float       # W, positive = consuming (PURE Haushalt OHNE Wallbox)
     grid_power: float        # W, positive = feed-in to grid
     battery_power: float     # W, positive = charging
-    pv_forecast_remaining_kwh: float | None = None  # remaining PV today (kWh)
+    pv_forecast_remaining_kwh: float | None = None  # remaining PV today (kWh, P50)
+    # Konservative P10-Restprognose (kWh) für das Spreading-Gate. None → Fallback
+    # auf pv_forecast_remaining_kwh (P50).
+    pv_forecast_remaining_p10_kwh: float | None = None
     # Wallbox-Verbrauch separat (W). 0 wenn nicht konfiguriert. Wird NICHT in
     # die Optimierungs-/Korridor-Logik einbezogen, damit EV-Spitzen nicht den
     # Hausverbrauch verfälschen. Reine Telemetrie + getrennter kWh-Zähler.
@@ -531,6 +534,33 @@ def spreading_active(
     return not is_low_yield_day(state, params, stats_peak_kwh=stats_peak_kwh)
 
 
+def _is_forecast_insufficient(
+    state: MaestroState, params: MaestroParams, target: float
+) -> bool:
+    """True wenn die konservative (P10) Restprognose den Akku-Restbedarf nicht deckt.
+
+    Vergleicht die pessimistische Restprognose (P10, Fallback P50) mit dem
+    verbleibenden Ladebedarf bis ``target`` inklusive Sicherheitsfaktor. Ist die
+    Prognose kleiner, hat der Akku Vorrang (kein Spreading, voller PV-Überschuss
+    in den Akku). Inaktiv wenn PV-Forecast aus, Spreading aus oder keine
+    Prognosedaten vorhanden sind (→ keine Regression).
+    """
+    if not params.pv_forecast_enabled or not params.spreading_enabled:
+        return False
+    remaining = state.pv_forecast_remaining_p10_kwh
+    if remaining is None:
+        remaining = state.pv_forecast_remaining_kwh
+    if remaining is None:
+        return False
+    needed_kwh = max(
+        0.0, (target - state.soc) / 100.0 * params.battery_capacity_kwh
+    )
+    if needed_kwh <= 0:
+        return False
+    min_required = needed_kwh * params.pv_forecast_safety_factor
+    return remaining < min_required
+
+
 def time_to_target_power(state: MaestroState, params: MaestroParams, now: datetime, target: float) -> float:
     """Calculate desired charge power (W) from remaining energy and remaining time.
 
@@ -895,7 +925,14 @@ def decide(
     # Bei aktivem Flag wird Spreading übersprungen, die Korridor-Pause umgangen
     # und im Korridor der volle PV-Überschuss genutzt.
     _low_yield = is_low_yield_day(state, params)
-    _spread_on = params.spreading_enabled and not _low_yield
+    # Forecast-Gate: Reicht die konservative (P10) Restprognose nicht, um den
+    # Akku bis zum Ziel zu füllen (× Sicherheitsfaktor), hat der Akku Vorrang –
+    # Spreading würde sonst drosseln und den Überschuss ins Netz schicken,
+    # obwohl später zu wenig Sonne kommt. Ohne Forecast-Daten (None) bleibt das
+    # Gate inaktiv → keine Verhaltensänderung gegenüber vorher.
+    _forecast_insufficient = _is_forecast_insufficient(state, params, target)
+    _battery_priority = _low_yield or _forecast_insufficient
+    _spread_on = params.spreading_enabled and not _battery_priority
 
     # ── 1. Master switch off ────────────────────────────────────────────────
     if not regelung_aktiv:
@@ -1150,11 +1187,12 @@ def decide(
             target_soc=params.fast_charge_floor_soc,
         )
 
-    # ── 6.96 Schwacher-PV-Tag: PV-Überschuss-Priorität (wie Korridor 7d) ───
+    # ── 6.96 Akku-Priorität: PV-Überschuss-Priorität (wie Korridor 7d) ───
+    # Greift bei schwachem PV-Tag ODER unzureichender Restprognose (P10).
     # NORMAL + max_charge_power: E3DC nutzt PV-Überschuss selbst, kein Netzbezug.
     # Fester Cap statt Momentan-Überschuss → kein ständiges Nachregeln.
     if (
-        _low_yield
+        _battery_priority
         and state.soc < params.charge_target
         and not curtailment_guard_active
     ):
@@ -1164,10 +1202,15 @@ def decide(
             else state.pv_power
         ) or 0.0
         if _pv_now > 0:
+            _prio_note = (
+                "Schwacher-PV-Tag"
+                if _low_yield
+                else "Prognose unzureichend"
+            )
             return MaestroDecision(
                 phase=PHASE_CORRIDOR,
                 reason=(
-                    f"Ladekorridor [Schwacher-PV-Tag: Überschuss-Priorität]: "
+                    f"Ladekorridor [{_prio_note}: Überschuss-Priorität]: "
                     f"SoC {state.soc:.0f}% → Ziel {target:.0f}%, "
                     f"max_charge {params.max_charge_power:.0f} W "
                     f"(E3DC nutzt PV-Überschuss, kein Netz)"
@@ -1276,7 +1319,7 @@ def decide(
             params.lower_corridor_pause_enabled
             and charge_power < params.lower_corridor
             and not curtailment_guard_active
-            and not _low_yield
+            and not _battery_priority
             and not (_spread_on and state.soc < BATTERY_FULL_SOC_CEILING)
         ):
             # charge_power_limit=0.0 → max_charge=0 (Ladung blockiert),
@@ -1382,7 +1425,7 @@ def decide(
             params.lower_corridor_pause_enabled
             and effective_charge < params.lower_corridor
             and not curtailment_guard_active
-            and not _low_yield
+            and not _battery_priority
         ):
             return MaestroDecision(
                 phase=PHASE_IDLE,

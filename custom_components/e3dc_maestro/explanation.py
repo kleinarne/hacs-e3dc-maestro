@@ -140,12 +140,20 @@ def decision_explanation(coord) -> str:
     elif phase == "corridor":
         target = _f(dec.target_soc)
         cpl = _f(dec.target_charge_power)
-        low_yield = "[Schwacher-PV-Tag" in (dec.reason or "")
+        reason = dec.reason or ""
+        low_yield = "[Schwacher-PV-Tag" in reason
+        forecast_prio = "[Prognose unzureichend" in reason
         if low_yield:
             text = (
                 f"Schwacher-PV-Tag: Ziel-SoC {target}% – Akku-Priorität aktiv, "
                 f"max_charge {cpl} W – E3DC nutzt PV-Überschuss selbst "
                 f"(nur PV, kein Netzbezug)."
+            )
+        elif forecast_prio:
+            text = (
+                f"Restprognose (P10) deckt den Ladebedarf nicht: Ziel-SoC {target}% – "
+                f"Akku-Priorität aktiv, max_charge {cpl} W – voller PV-Überschuss "
+                f"in den Akku statt Einspeisung."
             )
         else:
             text = (

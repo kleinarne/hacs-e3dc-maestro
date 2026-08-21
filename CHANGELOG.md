@@ -11,6 +11,35 @@ einen eigenen Versionsabschnitt verschieben.
 
 ---
 
+## [0.3.13] – Dynamisches P10-Prognose-Gate für Spreading (2026-08-21)
+
+**Feature / Bugfix.** Spreading darf nicht mehr drosseln, wenn die konservative
+PV-Restprognose den Ladebedarf nicht deckt — sonst speist die Anlage ein,
+während der Akku leer bleibt.
+
+### Neu
+- **Prognose-Gate (P10):** Vergleicht die pessimistische Rest-PV-Prognose
+  (`estimate10` am konfigurierten Solcast-/Forecast-Sensor) mit dem
+  Restbedarf × Sicherheitsfaktor. Ist P10 unzureichend, pausiert Spreading
+  und Maestro priorisiert den Akku (voller PV-Überschuss statt Einspeisung)
+- Gemeinsame **Akku-Priorität** aus Schwacher-PV-Tag **oder** unzureichender
+  P10-Prognose
+- Neuer Sensor **PV-Restprognose (P10)** inkl. Attributen P50-Rest und
+  Sicherheitsfaktor
+- Dashboard: P10/P50 in „Ladeverteilung“, Hilfetext zum Prognose-Gate
+
+### Verhalten
+- Fehlt P10 an der Prognosequelle → Fallback auf P50
+- Ohne Forecast-Daten oder bei deaktiviertem Forecast/Spreading → Gate inaktiv
+  (bisheriges Spreading bleibt unverändert)
+
+### Nach dem Update
+HA neu starten oder Integration neu laden, Browser hard-refreshen. Bestehende
+Classic-Dashboards werden **nicht** überschrieben — zum Erneuern: Dashboard
+löschen und über Community dashboards neu anlegen (oder YAML neu importieren).
+
+---
+
 ## [0.3.12] – Community-Dashboard & Forecast-Härten (2026-07-18)
 
 **Feature / Qualität.** Classic-Dashboard ohne YAML-Copy-Paste; 48‑h-Forecast

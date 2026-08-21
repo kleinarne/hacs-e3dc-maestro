@@ -1412,6 +1412,7 @@
         {
           "type": "entities",
           "title": "Ladeverteilung (Spreading)",
+          "subtitle": "Wird dynamisch pausiert, wenn die konservative PV-Prognose (P10) den Restbedarf nicht deckt",
           "entities": [
             {
               "entity": "switch.e3dc_maestro_ladeverteilung_spreading",
@@ -1420,6 +1421,18 @@
             {
               "entity": "number.e3dc_maestro_spreading_ziel_soc",
               "name": "Spreading-Ziel SoC (%)"
+            },
+            {
+              "entity": "sensor.e3dc_maestro_pv_restprognose_p10",
+              "name": "PV-Restprognose (P10)",
+              "secondary_info": "last-changed"
+            },
+            {
+              "type": "attribute",
+              "entity": "sensor.e3dc_maestro_pv_restprognose_p10",
+              "attribute": "p50_remaining_kwh",
+              "name": "PV-Restprognose (P50)",
+              "suffix": " kWh"
             },
             {
               "type": "button",
@@ -2610,7 +2623,7 @@
       "cards": [
         {
           "type": "markdown",
-          "content": "## Ladeverteilung (Spreading) – Parameter\n\nSpreading verhindert, dass Maestro den Akku sofort mit voller Leistung auf den\nZiel-SoC lädt. Stattdessen wird die Restenergie gleichmäßig auf die verbleibende\nZeit bis zum Ladeende verteilt.\n\nFormel:\n  Soll-Rate (W) = (Ziel_SoC - akt_SoC) / 100 × Kapazität_kWh × 1000 / Restzeit_h\n\nVorteil: Mehr Raum für PV-Spitzen, gleichmäßigere Auslastung, geringere Verluste.\n\n---\n\n### Spreading-Ziel SoC (%)\n\n**Wirkung:** Der SoC-Wert, bis zu dem Spreading aktiv ist. Ist der Akku-SoC\nhöher als dieser Wert, ist Spreading abgeschlossen und Maestro wechselt zu einer\nanderen Phase (corridor oder idle).\n\n**Empfehlung:** Gleich dem Ladeende SoC setzen, damit Spreading den gesamten\nLadevorgang steuert. Kann kleiner gesetzt werden, wenn die letzten Prozente\nzügig geladen werden sollen (CC/CV-Übergang des Akkus).\n\n**Standard:** entspricht Ladeende SoC (z. B. 95 %)\n"
+          "content": "## Ladeverteilung (Spreading) – Parameter\n\nSpreading verhindert, dass Maestro den Akku sofort mit voller Leistung auf den\nZiel-SoC lädt. Stattdessen wird die Restenergie gleichmäßig auf die verbleibende\nZeit bis zum Ladeende verteilt.\n\nFormel:\n  Soll-Rate (W) = (Ziel_SoC - akt_SoC) / 100 × Kapazität_kWh × 1000 / Restzeit_h\n\nVorteil: Mehr Raum für PV-Spitzen, gleichmäßigere Auslastung, geringere Verluste.\n\n---\n\n### Spreading-Ziel SoC (%)\n\n**Wirkung:** Der SoC-Wert, bis zu dem Spreading aktiv ist. Ist der Akku-SoC\nhöher als dieser Wert, ist Spreading abgeschlossen und Maestro wechselt zu einer\nanderen Phase (corridor oder idle).\n\n**Empfehlung:** Gleich dem Ladeende SoC setzen, damit Spreading den gesamten\nLadevorgang steuert. Kann kleiner gesetzt werden, wenn die letzten Prozente\nzügig geladen werden sollen (CC/CV-Übergang des Akkus).\n\n**Standard:** entspricht Ladeende SoC (z. B. 95 %)\n\n---\n\n### Dynamisches Prognose-Gate (P10)\n\nSpreading streckt die Ladung nur, wenn die erwartete Rest-PV den Ladebedarf\nzuverlässig deckt. Dafür prüft Maestro die **konservative** Prognose (P10 –\n10%-Perzentil, d. h. der pessimistische Fall) gegen den Restbedarf:\n\n  Restbedarf_kWh = (Ziel_SoC - akt_SoC) / 100 × Kapazität_kWh\n  nötig_kWh      = Restbedarf_kWh × Sicherheitsfaktor\n\nIst die **P10-Restprognose < nötig_kWh**, wird Spreading automatisch pausiert\nund der Akku erhält Priorität (voller PV-Überschuss statt Einspeisung). So wird\nverhindert, dass an unsicheren Tagen eingespeist wird, während der Akku leer bleibt.\n\nDie Sensoren **PV-Restprognose (P10)** und **(P50)** im Abschnitt „Ladeverteilung\"\nzeigen die Prognosewerte, auf denen diese Entscheidung basiert. Fehlt der\nP10-Wert an der Prognosequelle, fällt Maestro automatisch auf P50 zurück.\n"
         }
       ]
     },

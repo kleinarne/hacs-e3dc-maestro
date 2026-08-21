@@ -127,6 +127,10 @@ CONF_PV_FORECAST_THRESHOLD_KWH = "pv_forecast_threshold_kwh"  # min remaining kW
 CONF_BATTERY_CAPACITY_KWH = "battery_capacity_kwh"    # usable capacity for sizing
 CONF_PV_FORECAST_SAFETY_FACTOR = "pv_forecast_safety_factor"  # forecast_remaining >= required * factor
 CONF_DELAY_MIN_SOC = "delay_min_soc"                  # % SoC; below this floor pv_delay/astro_wait must not block charging
+# Attribut des Restprognose-Sensors mit der konservativen P10-Schätzung
+# (Solcast: "estimate10"). Wird für das Spreading-Gate genutzt: nur wenn selbst
+# die pessimistische Restprognose den Akku-Restbedarf deckt, wird gedrosselt.
+PV_FORECAST_P10_ATTR = "estimate10"
 
 # Config entry keys – Schwacher-PV-Tag (Akku-Priorität an bewölkten Tagen)
 CONF_PV_FORECAST_TODAY_SENSOR = "pv_forecast_today_sensor"  # entity_id, value = Tagessumme heute (kWh)
