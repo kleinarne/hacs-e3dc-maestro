@@ -1085,14 +1085,20 @@ def decide(
         else:
             ht_min = ht_min_dynamic(now, params)
             ht_min_source = "saisonal"
-        if state.soc > ht_min:
+        # Floor-Semantik (analog Notstromreserve): Im Hochtarif deckt der Akku
+        # das Haus, bis er auf die HT-Reserve fällt. Erst dann wird die
+        # Entladung gesperrt, damit der Rest des HT-Fensters abgesichert bleibt.
+        # Oberhalb der Reserve fällt die Entscheidung durch → normaler
+        # Eigenverbrauch (POWER_MODE_NORMAL im Catch-all).
+        if state.soc <= ht_min:
             slot_start = active_slot.start_h if active_slot else 0.0
             slot_end = active_slot.end_h if active_slot else 24.0
             return MaestroDecision(
                 phase=PHASE_HT_PROTECTION,
                 reason=(
                     f"Hochtarif-Slot ({slot_start:.0f}–{slot_end:.0f} Uhr), "
-                    f"SoC {state.soc:.0f}% > HT-Reserve {ht_min:.0f}% ({ht_min_source})"
+                    f"SoC {state.soc:.0f}% ≤ HT-Reserve {ht_min:.0f}% ({ht_min_source}) – "
+                    f"Entladung gesperrt"
                 ),
                 power_mode=POWER_MODE_IDLE,
                 target_soc=target,

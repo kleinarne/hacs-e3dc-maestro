@@ -160,9 +160,10 @@ class TestFeedInLimit:
 
 
 class TestHTProtection:
-    def test_active_in_window_with_sufficient_soc(self):
-        # ht_on=5, ht_off=21 → 10:00 is in window, soc=60 > ht_min_dynamic
-        state = MaestroState(soc=60, pv_power=0, house_power=1000, grid_power=0, battery_power=0)
+    def test_active_in_window_when_soc_at_or_below_reserve(self):
+        # Floor-Semantik: ht_on=5, ht_off=21 → 10:00 im Fenster, soc=30 ≤ ht_min≈50
+        # → Entladung gesperrt (Reserve für den Rest des HT-Fensters halten).
+        state = MaestroState(soc=30, pv_power=0, house_power=1000, grid_power=0, battery_power=0)
         params = MaestroParams(**{**DEFAULT_PARAMS.__dict__, "ht_min": 50, "ht_sockel": 10})
         decision = decide(state, params, _now(1, 15, 10))  # winter → ht_min≈50
         assert decision.phase == PHASE_HT_PROTECTION
@@ -172,8 +173,9 @@ class TestHTProtection:
         decision = decide(state, DEFAULT_PARAMS, _now(1, 15, 22))  # after ht_off=21
         assert decision.phase != PHASE_HT_PROTECTION
 
-    def test_inactive_when_soc_below_ht_min(self):
-        state = MaestroState(soc=30, pv_power=0, house_power=1000, grid_power=0, battery_power=0)
+    def test_inactive_when_soc_above_ht_min(self):
+        # SoC über der Reserve → Akku darf das Haus im HT-Fenster decken.
+        state = MaestroState(soc=60, pv_power=0, house_power=1000, grid_power=0, battery_power=0)
         params = MaestroParams(**{**DEFAULT_PARAMS.__dict__, "ht_min": 50})
         decision = decide(state, params, _now(1, 15, 10))
         assert decision.phase != PHASE_HT_PROTECTION
@@ -1831,16 +1833,16 @@ class TestSlotMinReserveOverridesHtMin:
                "tariff_schedule": TariffSchedule(slots=[slot]),
             }
         )
-        # SoC=60 is above ht_min=30 (would normally trigger HT-protection),
-        # but below the slot's explicit reserve floor 70 → must NOT trigger.
+        # Floor-Semantik: SoC=60 liegt unter dem Slot-Floor 70 → Entladung
+        # gesperrt (HT-Schutz aktiv), damit der Rest des HT-Fensters gesichert ist.
         state = MaestroState(soc=60, pv_power=0, house_power=1000, grid_power=0, battery_power=0)
         d = decide(state, params, _now(1, 15, 10))
-        assert d.phase != PHASE_HT_PROTECTION
+        assert d.phase == PHASE_HT_PROTECTION
 
-        # SoC=80 is above the floor → HT protection active
+        # SoC=80 liegt über dem Floor 70 → Akku darf das Haus decken (kein Schutz).
         state = MaestroState(soc=80, pv_power=0, house_power=1000, grid_power=0, battery_power=0)
         d = decide(state, params, _now(1, 15, 10))
-        assert d.phase == PHASE_HT_PROTECTION
+        assert d.phase != PHASE_HT_PROTECTION
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1999,7 +2001,7 @@ class TestAdaptiveOverridesInDecide:
         assert d.phase == PHASE_RESERVE_PROTECTION
 
     def test_ht_protection_uses_adaptive_floor(self):
-        # Slot 5–21, low avg HT consumption → adaptive floor low → most SoCs trigger HT.
+        # Slot 5–21, adaptive floor = 200 W × 16 h × 1.3 / 10 kWh = 41.6 %.
         slot = TariffSlot(weekdays=frozenset(range(7)), start_h=5, end_h=21,
                           class_=TARIFF_HIGH)
         p = _adaptive_params(
@@ -2007,20 +2009,20 @@ class TestAdaptiveOverridesInDecide:
             tariff_schedule=TariffSchedule(slots=[slot]),
             seasonal_reserve_enabled=False,
         )
-        # 200 W × 16 h × 1.3 = 4.16 kWh / 10 = 41.6 % adaptive floor.
+        # SoC über dem adaptiven Floor → Akku deckt das Haus, kein HT-Schutz.
         s = MaestroState(soc=60, pv_power=0, house_power=0, grid_power=0,
                          battery_power=0, consumption_avg_w_ht_window=200,
                          consumption_data_days=14)
         d = decide(s, p, _now(1, 15, 10))
-        assert d.phase == PHASE_HT_PROTECTION
-        assert "adaptiv" in d.reason
+        assert d.phase != PHASE_HT_PROTECTION
 
-        # Below adaptive floor → no HT protection
+        # SoC unter dem adaptiven Floor → Entladung gesperrt (HT-Schutz aktiv).
         s2 = MaestroState(soc=30, pv_power=0, house_power=0, grid_power=0,
                           battery_power=0, consumption_avg_w_ht_window=200,
                           consumption_data_days=14)
         d2 = decide(s2, p, _now(1, 15, 10))
-        assert d2.phase != PHASE_HT_PROTECTION
+        assert d2.phase == PHASE_HT_PROTECTION
+        assert "adaptiv" in d2.reason
 
 
 # ──────────────────────────────────────────────────────────────────────────────

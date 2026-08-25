@@ -47,7 +47,7 @@ E3DC Maestro runs entirely **local and without any cloud connection**. It extend
 | **Feed-in limit protection** | Reactively raises charge power when grid export exceeds the 70 % limit |
 | **Curtailment guard** | Preventive minimum charge power when inverter clipping is imminent |
 | **Emergency reserve** | Seasonally interpolated or consumption-adaptive battery reserve |
-| **Peak-tariff (HT) protection** | Blocks discharge during configured high-tariff hours |
+| **Peak-tariff (HT) protection** | During high-tariff hours the battery covers the house down to a reserve floor, then discharge is blocked to keep capacity for the rest of the window |
 | **PV forecast delay** | Delays corridor charging when Solcast/Forecast.Solar predicts enough PV |
 | **Forward-looking charging** | Raises today's charge target when tomorrow's PV is expected to be low |
 | **Spreading (charge distribution)** | Spreads PV surplus evenly across the remaining charge window – **default ON since v0.3.1** (hardware protection against 0/max-power bursts) |
@@ -261,7 +261,7 @@ Maestro calculates the optimal charge window **daily** (based on the current dat
 
 ### Step 4: Peak-tariff (HT) protection
 
-Prevents battery discharge during expensive peak-tariff hours.
+During expensive peak-tariff hours the battery keeps covering the house load and is only stopped once it reaches the reserve floor — protecting enough capacity for the rest of the window instead of buying expensive grid power. The `Reserve winter/equinox` values below are that floor (the battery is not discharged **below** them).
 
 | Parameter | Default | Description |
 |---|---|---|
@@ -939,7 +939,7 @@ For questions about commercial licensing or use cases that are not compatible wi
 | **Einspeiseschutz** | Reaktive Erhöhung der Ladeleistung wenn Einspeisung > 70 % Grenze |
 | **Abregelschutz (Curtailment Guard)** | Präventive Mindest-Ladeleistung bei drohender Abregelung |
 | **Notstromreserve** | Saisonal interpolierte oder verbrauchsadaptive Reserve |
-| **HT/NT-Schutz** | Entladesperre während der Hochtarif-Zeit |
+| **HT/NT-Schutz** | Akku deckt im Hochtarif das Haus bis zur Reserve, danach Entladesperre (Kapazität für den Rest des Fensters halten) |
 | **PV-Prognose-Verzögerung** | Laden verzögern, wenn Solcast/Forecast.Solar ausreichend PV ankündigt |
 | **Vorausschauendes Laden** | Ladeziel für morgen erhöhen wenn wenig PV erwartet wird |
 | **Ladeverteilung (Spreading)** | PV-Überschuss gleichmäßig über die verbleibende Ladezeit verteilen – **seit v0.3.1 standardmäßig aktiv** (Hardware-Schutz vor 0/max-Bursts) |
@@ -1153,14 +1153,18 @@ Maestro berechnet täglich **gleitend** (basierend auf dem aktuellen Datum) den 
 
 ### Schritt 4: HT/NT-Schutz
 
-Verhindert das Entladen des Akkus während teurer Hochtarif-Stunden.
+Im Hochtarif-Fenster deckt der Akku weiterhin den Hausverbrauch und wird erst
+gestoppt, sobald er die Reserve erreicht — so bleibt genug Kapazität für den
+Rest des teuren Fensters erhalten, statt teuren Netzstrom zu beziehen. Die
+Speicherreserve unten ist dieser **Floor**: Unter diesen Wert wird der Akku im
+HT-Fenster nicht entladen.
 
 | Parameter | Standard | Erläuterung |
 |---|---|---|
 | **HT/NT-Schutz aktivieren** | aus | Aktiviert die gesamte HT-Logik |
 | **Hochtarif Beginn (h)** | 6 | Ortszeit (MEZ/MESZ automatisch) |
 | **Hochtarif Ende (h)** | 21 | Ortszeit |
-| **Speicherreserve Winter (%)** | 50 | Mindest-SoC der im HT-Fenster erhalten bleibt (Winter) |
+| **Speicherreserve Winter (%)** | 50 | Mindest-SoC der im HT-Fenster erhalten bleibt (Winter) – Akku wird nicht darunter entladen |
 | **Speicherreserve Äquinoktium (%)** | 10 | Mindest-SoC zur Tagundnachtgleiche |
 | **HT auch Samstag** | aus | HT-Schutz gilt auch samstags |
 | **HT auch Sonntag** | aus | HT-Schutz gilt auch sonntags |

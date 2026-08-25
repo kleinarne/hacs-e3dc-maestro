@@ -95,9 +95,9 @@ def decision_explanation(coord) -> str:
         )
     elif phase == "ht_protection":
         text = (
-            "Hochtarif-Schutz: Aktuell teurer Netzstromtarif – Maestro hält "
-            "die Batterie für die HT-Phase bereit und sperrt günstiges "
-            "Nachladen."
+            "Hochtarif-Schutz: Der SoC hat die HT-Reserve erreicht – Maestro "
+            "sperrt die weitere Entladung, damit für den Rest des teuren "
+            "Hochtarif-Fensters genug Kapazität erhalten bleibt."
         )
     elif phase == "force_discharge":
         pw = _f(getattr(p, "force_discharge_power_w", None))

@@ -11,6 +11,31 @@ einen eigenen Versionsabschnitt verschieben.
 
 ---
 
+## [0.3.14] – HT-Schutz Entladelogik korrigiert (2026-08-25)
+
+**Bugfix.** Der HT-Schutz hat die Akku-Entladung im Hochtarif genau verkehrt
+herum geregelt. Die Entladung wurde gesperrt, solange der SoC **über** der
+HT-Reserve lag — also gerade dann, wenn der Akku das Haus versorgen sollte.
+Erst wenn der Akku fast leer war, wurde entladen. Folge: voller Akku und
+teurer Netzbezug im Hochtarif-Fenster (siehe [#2](https://github.com/TommiG1/hacs-e3dc-maestro/issues/2)).
+
+### Behoben
+- **Floor-Semantik wie bei der Notstromreserve:** Im `high`-Slot versorgt der
+  Akku jetzt das Haus und entlädt bis zur HT-Reserve. Erst wenn der SoC die
+  Reserve erreicht, stoppt die Entladung, damit für den Rest des teuren
+  Fensters genug Kapazität bleibt. Netzladung findet im `high`-Slot weiterhin
+  nicht statt.
+
+### Doku
+- README, Erklärungssensor und Dashboard-Hilfetexte auf die korrigierte
+  Floor-Semantik angepasst (`high` = Entladung nur bis zur Reserve).
+
+### Nach dem Update
+HA neu starten oder Integration neu laden. Bestehende Konfiguration bleibt
+unverändert; die HT-Reserve-Parameter wirken jetzt wie beschrieben als Floor.
+
+---
+
 ## [0.3.13] – Dynamisches P10-Prognose-Gate für Spreading (2026-08-21)
 
 **Feature / Bugfix.** Spreading darf nicht mehr drosseln, wenn die konservative

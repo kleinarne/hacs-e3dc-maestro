@@ -47,7 +47,7 @@ E3DC Maestro läuft vollständig **lokal und ohne Cloud-Verbindung**. Es ergänz
 | **Einspeiseschutz** | Reaktive Erhöhung der Ladeleistung wenn Einspeisung > 70 % Grenze |
 | **Abregelschutz (Curtailment Guard)** | Präventive Mindest-Ladeleistung bei drohender Abregelung |
 | **Notstromreserve** | Saisonal interpolierte oder verbrauchsadaptive Reserve |
-| **HT/NT-Schutz** | Entladesperre während der Hochtarif-Zeit |
+| **HT/NT-Schutz** | Akku deckt im Hochtarif das Haus bis zur Reserve, danach Entladesperre (Kapazität für den Rest des Fensters halten) |
 | **PV-Prognose-Verzögerung** | Laden verzögern, wenn Solcast/Forecast.Solar ausreichend PV ankündigt |
 | **Vorausschauendes Laden** | Ladeziel für morgen erhöhen wenn wenig PV erwartet wird |
 | **Ladeverteilung (Spreading)** | PV-Überschuss gleichmäßig über die verbleibende Ladezeit verteilen – **seit v0.3.1 standardmäßig aktiv** (Hardware-Schutz vor 0/max-Bursts) |
@@ -271,14 +271,18 @@ Maestro berechnet täglich **gleitend** (basierend auf dem aktuellen Datum) den 
 
 ### Schritt 4: HT/NT-Schutz
 
-Verhindert das Entladen des Akkus während teurer Hochtarif-Stunden.
+Im Hochtarif-Fenster deckt der Akku weiterhin den Hausverbrauch und wird erst
+gestoppt, sobald er die Reserve erreicht — so bleibt genug Kapazität für den
+Rest des teuren Fensters erhalten, statt teuren Netzstrom zu beziehen. Die
+Speicherreserve unten ist dieser **Floor**: Unter diesen Wert wird der Akku im
+HT-Fenster nicht entladen.
 
 | Parameter | Standard | Erläuterung |
 |---|---|---|
 | **HT/NT-Schutz aktivieren** | aus | Aktiviert die gesamte HT-Logik |
 | **Hochtarif Beginn (h)** | 6 | Ortszeit (MEZ/MESZ automatisch) |
 | **Hochtarif Ende (h)** | 21 | Ortszeit |
-| **Speicherreserve Winter (%)** | 50 | Mindest-SoC der im HT-Fenster erhalten bleibt (Winter) |
+| **Speicherreserve Winter (%)** | 50 | Mindest-SoC der im HT-Fenster erhalten bleibt (Winter) – Akku wird nicht darunter entladen |
 | **Speicherreserve Äquinoktium (%)** | 10 | Mindest-SoC zur Tagundnachtgleiche |
 | **HT auch Samstag** | aus | HT-Schutz gilt auch samstags |
 | **HT auch Sonntag** | aus | HT-Schutz gilt auch sonntags |

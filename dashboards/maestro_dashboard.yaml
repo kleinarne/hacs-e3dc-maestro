@@ -1432,7 +1432,7 @@ views:
           **Tarif-Slots konfigurieren:** Über *Einstellungen → Integrationen →
           E3DC Maestro → Konfigurieren → Tarif-Slots* lassen sich beliebig viele
           Fenster (Wochentage, Uhrzeit, Klasse) anlegen.
-          Klassen: `high` = kein Entladen, `low` = Netzladung erlaubt, `normal` = neutral.
+          Klassen: `high` = Entladung nur bis zur Reserve (HT-Schutz), `low` = Netzladung erlaubt, `normal` = neutral.
 
   - title: Flexibilität
     icon: mdi:home-lightning-bolt
@@ -2703,8 +2703,10 @@ views:
         content: |
           ## Hochtarif-Schutz – Parameter
           
-          Der HT-Schutz verhindert, dass Maestro den Akku im Hochtarif-Fenster entlädt
-          (Phase ht_protection). Gleichzeitig hält er eine saisonal variable Mindest-Reserve.
+          Der HT-Schutz lässt den Akku im Hochtarif-Fenster das Haus decken und stoppt
+          die Entladung erst, wenn der SoC die (saisonal variable) HT-Reserve erreicht
+          (Phase ht_protection). So bleibt genug Kapazität für den Rest des teuren Fensters,
+          statt teuren Netzstrom zu beziehen. Unter die Reserve wird nicht entladen.
           
           **Wichtig:** Alle Zeitangaben werden in der HA-Lokalzeit ausgewertet
           (Europe/Berlin → automatisch MEZ im Winter / MESZ im Sommer). Trage die
@@ -3243,7 +3245,7 @@ views:
           
           | Klasse | Wirkung |
           |--------|---------|
-          | **high** | Kein Entladen – HT-Schutz aktiv |
+          | **high** | Akku deckt Haus bis zur Reserve, darunter Entladesperre (HT-Schutz) |
           | **low** | Netzladung erlaubt – günstige Stunden nutzen |
           | **normal** | Neutral – Maestro entscheidet nach Standardlogik |
           
