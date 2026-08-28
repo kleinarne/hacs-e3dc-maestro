@@ -82,6 +82,7 @@ from .coordinator_helpers import (
     _limits_changed_vs_sent_values,
     _params_from_options,
     _ramp_bypass_due_to_resync,
+    _ramp_bypass_for_phase,
     _run_optimizer_sync,
     _tariff_schedule_from_stored,
 )
@@ -99,6 +100,7 @@ __all__ = [
     "_limits_changed_vs_sent_values",
     "_params_from_options",
     "_ramp_bypass_due_to_resync",
+    "_ramp_bypass_for_phase",
     "_run_optimizer_sync",
     "_tariff_schedule_from_stored",
     "_ewma_update",
@@ -568,14 +570,19 @@ class E3DCMaestroCoordinator(
             force_discharge=self.force_discharge,
             previous_phase=self.last_phase,
             previous_phase_since=self._last_phase_changed_at,
+            previous_battery_priority=(
+                self.last_decision.battery_priority
+                if self.last_decision is not None
+                else False
+            ),
         )
 
         # Act on decision (debounced)
         # A2: Charge-power ramp – limit how fast charge power rises
-        bypass_ramp = decision.phase in (
-            PHASE_OFF, PHASE_EMERGENCY, PHASE_FEED_IN_LIMIT, PHASE_CURTAILMENT_GUARD,
-            PHASE_MORNING_DISCHARGE, PHASE_FORCE_DISCHARGE,
-        ) or self.low_yield_day_active
+        # Phase 5: bypass hängt an decision.battery_priority (nur wenn Abschnitt
+        # 6.96 diesen Tick tatsächlich gegriffen hat), nicht mehr am
+        # Ganztags-Flag low_yield_day_active.
+        bypass_ramp = _ramp_bypass_for_phase(decision)
         if decision.charge_power_limit is not None:
             target_p = int(decision.charge_power_limit)
             ramp = active.charge_ramp_w_per_cycle

@@ -11,6 +11,49 @@ einen eigenen Versionsabschnitt verschieben.
 
 ---
 
+## [0.3.16] – Schwacher-PV-Tag-Logik: Bedarfsprüfung statt Ganztags-Flag (2026-08-28)
+
+### Geändert – Schwacher-PV-Tag-Logik: Bedarfsprüfung statt Ganztags-Flag
+
+**Verhaltensändernd.** Die Schwacher-PV-Tag-Priorität (voller PV-Überschuss in
+den Akku statt Spreading/Korridor-Pause) wurde bisher als Ganztags-Flag aus
+dem Verhältnis Tagesprognose/Referenz-Sommertag abgeleitet und danach nie mehr
+gegen den tatsächlichen Restbedarf geprüft. Das führte dazu, dass der Akku an
+einem als "schwach" markierten Tag auch dann noch mit voller Leistung
+weitergeladen wurde, wenn die Restprognose den Bedarf bis zum Ladeende-SoC
+längst um ein Vielfaches deckte (Feldfall 28.08.2026: SoC 85 %, Restbedarf
+2,7 kWh, P10-Restprognose 21,9 kWh, trotzdem 9000 W Ladeleistung).
+
+- **Bedarfsprüfung als Gate:** Neue Kennzahl `low_yield_coverage_ratio()`
+  (Restprognose ÷ Restbedarf bis Ladeende-SoC × Sicherheitsfaktor) deaktiviert
+  die Priorität, sobald die Deckung ausreicht. Hysterese (Freigabe ab
+  Deckungsgrad 1,0, Wiedereinstieg erst unter 0,85) verhindert Phasen-Pendeln.
+  Ohne jede Restprognose bleibt das Altverhalten unverändert (Gate schließt,
+  keine Regression für Installationen ohne PV-Prognose-Sensor).
+- **Ziel-Konsistenz:** Im Prioritäts-Zweig zeigen `target_soc` und der
+  Reason-Text jetzt das tatsächlich verfolgte Ladeende-SoC statt des an
+  diesem Tick übersteuerten Tages-Rampenziels – behebt den Widerspruch
+  "Ziel 67 %" bei einer Ladung, die tatsächlich bis 100 % läuft.
+- **Diagnose:** Neues Attribut `low_yield_coverage` am
+  `sensor.e3dc_maestro_decision_explanation` sowie im Reason-Text der
+  Priorität.
+- **Saisonal normierte Referenz (opt-in):** Neuer Parameter
+  `low_yield_reference_seasonal` skaliert die kWp-Baseline-Referenz über die
+  Tageslänge (Faktor 0,3–1,0 zwischen Winter- und Sommersonnenwende), damit
+  `binary_sensor.e3dc_maestro_schwacher_pv_tag` im Winter nicht praktisch
+  jeden Tag als "schwach" markiert. Standardmäßig aus – bestehende
+  Installationen ändern sich nicht ohne explizite Aktivierung.
+- **Ramp-Bypass entkoppelt:** Der sanfte Leistungsanlauf (A2) wird jetzt nur
+  noch übersprungen, wenn die Priorität in diesem Tick tatsächlich aktiv war
+  (`decision.battery_priority`), nicht mehr für den ganzen Tag über das
+  Ganztags-Flag `low_yield_day_active`.
+- **Zurückgestellt:** Eine zeitbasierte Dosierung im Übergangsband
+  (Deckungsgrad 0,85–1,0) wurde bewusst nicht umgesetzt – `max_charge_power`
+  ist an einem echt trüben Tag richtig, weil kurze Wolkenlücken sofort
+  mitgenommen werden. Erst bei beobachteter Oszillation im Feld nachrüsten.
+
+---
+
 ## [0.3.15] – Aktive Netzladung im low-Slot (NT-Fenster) (2026-08-28)
 
 **Feature.** Follow-up zu [#2](https://github.com/TommiG1/hacs-e3dc-maestro/issues/2):

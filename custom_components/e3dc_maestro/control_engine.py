@@ -117,6 +117,13 @@ class MaestroParams:
     low_yield_threshold: float = 0.5                # Anteil 0–1
     low_yield_reference_kwh: float = 0.0            # 0 = automatisch (kWp + Statistik)
     low_yield_reference_kwh_per_kwp: float = 5.5    # Faktor für kWp-Baseline
+    # Phase 3: opt-in, skaliert die kWp-Baseline-Referenz saisonal über
+    # daylight_factor() (kürzerer Wintertag → niedrigere Referenz), damit
+    # binary_sensor.e3dc_maestro_schwacher_pv_tag im Winter nicht praktisch
+    # jeden Tag als "schwach" markiert. Default False = Altverhalten
+    # (fixe Referenz das ganze Jahr), damit bestehende Installationen sich
+    # nicht ohne explizite Zustimmung ändern.
+    low_yield_reference_seasonal: bool = False
     # Wallbox
     wallbox_enabled: bool = False
     wallbox_min_current: float = 6
@@ -234,6 +241,11 @@ class MaestroDecision:
     target_soc: float | None = None         # calculated target SoC for this time
     target_charge_power: float | None = None
     feed_in_excess_w: float | None = None   # W above feed-in limit when PHASE_FEED_IN_LIMIT
+    # Schwacher-PV-Tag / Prognose-Gate: True wenn Abschnitt 6.96 (Akku-Priorität)
+    # diesen Tick tatsächlich gegriffen hat. Für den Ramp-Bypass (A2) statt des
+    # Ganztags-Flags ``low_yield_day_active``, damit der Anlauf-Bypass nur im
+    # tatsächlich aktiven Prioritäts-Zweig gilt.
+    battery_priority: bool = False
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -496,10 +508,19 @@ def low_slot_grid_charge_target(
 # Schwacher-PV-Tag: Erkennung + Überschuss-Priorität
 # ──────────────────────────────────────────────────────────────────────────────
 
+# Phase 3: Untergrenze der saisonalen Skalierung der kWp-Baseline-Referenz.
+# Bei Wintersonnenwende (daylight_factor=0) sinkt die Referenz auf diesen
+# Anteil des Sommerwerts, nicht auf 0 – ein echter Wintertag hat trotz
+# kurzer Sonnenscheindauer noch messbaren Ertrag, eine Referenz von 0 würde
+# jede Erkennung unmöglich machen (reference <= 0 → is_low_yield_day() False).
+_SEASONAL_REFERENCE_MIN_FACTOR = 0.3
+
+
 def reference_pv_yield_kwh(
     params: MaestroParams,
     *,
     stats_peak_kwh: float | None = None,
+    dt: datetime | None = None,
 ) -> float:
     """Referenz-Tagesertrag (kWh) für einen sehr sonnigen Tag.
 
@@ -511,12 +532,26 @@ def reference_pv_yield_kwh(
     Wird ``0.0`` zurückgegeben, wenn keine Quelle eine sinnvolle Referenz
     liefert (z. B. kWp ≤ 0 und keine Statistik) – ``is_low_yield_day`` deutet
     das als „nicht erkennbar“ und gibt ``False`` zurück.
+
+    Phase 3 (opt-in via ``params.low_yield_reference_seasonal``): ist ``dt``
+    gesetzt, wird die kWp-Baseline (Quelle 2) mit einem saisonalen Faktor aus
+    ``daylight_factor(dt, params)`` skaliert – volle Referenz zur
+    Sommersonnenwende, ``_SEASONAL_REFERENCE_MIN_FACTOR`` zur
+    Wintersonnenwende. Der manuelle Override und der historische Peak bleiben
+    unskaliert: der Override ist ein bewusster Nutzerwert, der Peak spiegelt
+    bereits einen real gemessenen (saisonal ohnehin extremen) Tag.
     """
     candidates: list[float] = []
     if params.low_yield_reference_kwh > 0:
         candidates.append(params.low_yield_reference_kwh)
     if params.installed_kwp > 0 and params.low_yield_reference_kwh_per_kwp > 0:
-        candidates.append(params.installed_kwp * params.low_yield_reference_kwh_per_kwp)
+        kwp_baseline = params.installed_kwp * params.low_yield_reference_kwh_per_kwp
+        if params.low_yield_reference_seasonal and dt is not None:
+            seasonal_factor = _SEASONAL_REFERENCE_MIN_FACTOR + (
+                1.0 - _SEASONAL_REFERENCE_MIN_FACTOR
+            ) * daylight_factor(dt, params)
+            kwp_baseline *= seasonal_factor
+        candidates.append(kwp_baseline)
     if stats_peak_kwh is not None and stats_peak_kwh > 0:
         candidates.append(stats_peak_kwh)
     return max(candidates) if candidates else 0.0
@@ -527,6 +562,7 @@ def is_low_yield_day(
     params: MaestroParams,
     *,
     stats_peak_kwh: float | None = None,
+    dt: datetime | None = None,
 ) -> bool:
     """True wenn ``pv_forecast_today_kwh / reference ≤ low_yield_threshold``.
 
@@ -534,13 +570,16 @@ def is_low_yield_day(
       * Feature aktiv (``params.low_yield_priority_enabled``)
       * Tagesprognose vorhanden (``state.pv_forecast_today_kwh``)
       * Referenz > 0 (sonst keine Aussage möglich)
+
+    ``dt`` wird an :func:`reference_pv_yield_kwh` durchgereicht (Phase 3,
+    saisonale Referenz, nur wirksam mit ``low_yield_reference_seasonal``).
     """
     if not params.low_yield_priority_enabled:
         return False
     if state.pv_forecast_today_kwh is None or state.pv_forecast_today_kwh < 0:
         return False
     peak = stats_peak_kwh if stats_peak_kwh is not None else state.pv_stats_peak_kwh
-    reference = reference_pv_yield_kwh(params, stats_peak_kwh=peak)
+    reference = reference_pv_yield_kwh(params, stats_peak_kwh=peak, dt=dt)
     if reference <= 0:
         return False
     ratio = state.pv_forecast_today_kwh / reference
@@ -563,11 +602,51 @@ def spreading_active(
     state: MaestroState,
     *,
     stats_peak_kwh: float | None = None,
+    dt: datetime | None = None,
 ) -> bool:
     """True wenn Spreading aktiv sein soll (Switch an UND kein Schwacher-PV-Tag)."""
     if not params.spreading_enabled:
         return False
-    return not is_low_yield_day(state, params, stats_peak_kwh=stats_peak_kwh)
+    return not is_low_yield_day(state, params, stats_peak_kwh=stats_peak_kwh, dt=dt)
+
+
+# Schwacher-PV-Tag-Gate (low_yield_coverage_ratio): Hysterese-Schwellen gegen
+# Phasen-Pendeln um den Deckungsgrad 1.0. Freigabe (Priorität endet) erst ab
+# vollständiger Deckung; Wiedereinstieg (Priorität greift erneut) erst wenn
+# die Deckung merklich unter 1.0 fällt.
+LOW_YIELD_RELEASE_COVERAGE = 1.0
+LOW_YIELD_REENGAGE_COVERAGE = 0.85
+
+
+def low_yield_coverage_ratio(
+    state: MaestroState, params: MaestroParams, target: float
+) -> float | None:
+    """Restprognose / (Restbedarf bis ``target`` × Sicherheitsfaktor).
+
+    Verwendet dieselbe Restprognose-Quelle wie ``_is_forecast_insufficient``
+    (P10, Fallback P50). ``target`` sollte das Ladeende-SoC
+    (``params.charge_target``) sein, nicht das aktuelle Tages-Rampenziel –
+    die Schwacher-PV-Tag-Priorität soll erst enden, wenn der Akku bis zum
+    eigentlichen Endziel gedeckt ist.
+
+    Rückgabe:
+      * ``None`` wenn keine Restprognose vorliegt oder ``battery_capacity_kwh``
+        ungültig ist → keine Aussage möglich, Aufrufer muss konservativ bleiben.
+      * ``math.inf`` wenn der Restbedarf bereits ≤ 0 ist (SoC ≥ target).
+      * sonst der Deckungsgrad als positive Zahl (≥ 1.0 = ausreichend gedeckt).
+    """
+    remaining = state.pv_forecast_remaining_p10_kwh
+    if remaining is None:
+        remaining = state.pv_forecast_remaining_kwh
+    if remaining is None or params.battery_capacity_kwh <= 0:
+        return None
+    needed_kwh = max(0.0, (target - state.soc) / 100.0 * params.battery_capacity_kwh)
+    if needed_kwh <= 0:
+        return math.inf
+    min_required = needed_kwh * params.pv_forecast_safety_factor
+    if min_required <= 0:
+        return math.inf
+    return remaining / min_required
 
 
 def _is_forecast_insufficient(
@@ -906,6 +985,7 @@ def decide(
     force_discharge: bool = False,
     previous_phase: str | None = None,
     previous_phase_since: datetime | None = None,
+    previous_battery_priority: bool = False,
 ) -> MaestroDecision:
     """Determine the desired action for this control cycle.
 
@@ -960,15 +1040,33 @@ def decide(
 
     # Schwacher-PV-Tag: einmal pro Tick auswerten und als Flag durchreichen.
     # Bei aktivem Flag wird Spreading übersprungen, die Korridor-Pause umgangen
-    # und im Korridor der volle PV-Überschuss genutzt.
-    _low_yield = is_low_yield_day(state, params)
+    # und im Korridor der volle PV-Überschuss genutzt – ABER nur solange die
+    # Restprognose den Restbedarf bis zum Ladeende-SoC (params.charge_target)
+    # nicht bereits deckt (Bedarfsprüfung, siehe low_yield_coverage_ratio).
+    # Ohne jede Restprognose (Deckungsgrad None) bleibt die Priorität aktiv,
+    # sobald der Tag als "schwach" markiert ist – das ist die konservative,
+    # rückwärtskompatible Default-Haltung.
+    _low_yield = is_low_yield_day(state, params, dt=now)
+    _low_yield_coverage = (
+        low_yield_coverage_ratio(state, params, params.charge_target)
+        if _low_yield else None
+    )
+    _low_yield_release_threshold = (
+        LOW_YIELD_RELEASE_COVERAGE
+        if previous_battery_priority
+        else LOW_YIELD_REENGAGE_COVERAGE
+    )
+    _low_yield_released = (
+        _low_yield_coverage is not None
+        and _low_yield_coverage >= _low_yield_release_threshold
+    )
     # Forecast-Gate: Reicht die konservative (P10) Restprognose nicht, um den
     # Akku bis zum Ziel zu füllen (× Sicherheitsfaktor), hat der Akku Vorrang –
     # Spreading würde sonst drosseln und den Überschuss ins Netz schicken,
     # obwohl später zu wenig Sonne kommt. Ohne Forecast-Daten (None) bleibt das
     # Gate inaktiv → keine Verhaltensänderung gegenüber vorher.
     _forecast_insufficient = _is_forecast_insufficient(state, params, target)
-    _battery_priority = _low_yield or _forecast_insufficient
+    _battery_priority = (_low_yield and not _low_yield_released) or _forecast_insufficient
     _spread_on = params.spreading_enabled and not _battery_priority
 
     # ── 1. Master switch off ────────────────────────────────────────────────
@@ -1247,21 +1345,40 @@ def decide(
         if _pv_now > 0:
             _prio_note = (
                 "Schwacher-PV-Tag"
-                if _low_yield
+                if (_low_yield and not _low_yield_released)
                 else "Prognose unzureichend"
+            )
+            _coverage_note = (
+                f", Restprognose-Deckung {_low_yield_coverage:.2f}"
+                if _low_yield_coverage is not None
+                else ""
+            )
+            # Dieser Zweig lädt bewusst über das Tages-Rampenziel (``target``)
+            # hinaus bis zum Ladeende-SoC (``params.charge_target``) – der
+            # Akku soll den vollen PV-Überschuss aufnehmen, solange die
+            # Restprognose den Bedarf nicht sicher deckt. target_soc spiegelt
+            # deshalb das tatsächlich verfolgte Ziel (Ladeende-SoC), nicht
+            # das an diesem Tick übersteuerte Rampenziel – sonst widersprechen
+            # sich Sensor-Anzeige ("Ziel X %") und Aktion (Ladung bis 100 %).
+            _ramp_override_note = (
+                f" (Rampen-Ziel {target:.0f}% übersteuert)"
+                if params.charge_target > target
+                else ""
             )
             return MaestroDecision(
                 phase=PHASE_CORRIDOR,
                 reason=(
                     f"Ladekorridor [{_prio_note}: Überschuss-Priorität]: "
-                    f"SoC {state.soc:.0f}% → Ziel {target:.0f}%, "
+                    f"SoC {state.soc:.0f}% → Ladeende-Ziel {params.charge_target:.0f}%"
+                    f"{_ramp_override_note}, "
                     f"max_charge {params.max_charge_power:.0f} W "
-                    f"(E3DC nutzt PV-Überschuss, kein Netz)"
+                    f"(E3DC nutzt PV-Überschuss, kein Netz{_coverage_note})"
                 ),
                 power_mode=POWER_MODE_NORMAL,
                 charge_power_limit=params.max_charge_power,
-                target_soc=target,
+                target_soc=params.charge_target,
                 target_charge_power=params.max_charge_power,
+                battery_priority=True,
             )
 
     # ── 6.97 Aktive Netzladung im low-Slot (NT-Fenster) ──────────────────

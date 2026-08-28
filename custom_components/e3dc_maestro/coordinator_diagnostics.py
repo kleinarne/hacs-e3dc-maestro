@@ -174,7 +174,10 @@ class CoordinatorDiagnosticsMixin:
             pv_stats_peak_kwh=self._low_yield_stats_peak_kwh,
         )
         return is_low_yield_day(
-            probe, self._params, stats_peak_kwh=self._low_yield_stats_peak_kwh
+            probe,
+            self._params,
+            stats_peak_kwh=self._low_yield_stats_peak_kwh,
+            dt=dt_util.now(),
         )
 
 
@@ -195,7 +198,9 @@ class CoordinatorDiagnosticsMixin:
         """Berechnete Referenz (kWh) aus kWp-Baseline, Statistik und Override."""
         from .control_engine import reference_pv_yield_kwh
         ref = reference_pv_yield_kwh(
-            self._params, stats_peak_kwh=self._low_yield_stats_peak_kwh
+            self._params,
+            stats_peak_kwh=self._low_yield_stats_peak_kwh,
+            dt=dt_util.now(),
         )
         return round(ref, 2) if ref > 0 else None
 
@@ -207,6 +212,28 @@ class CoordinatorDiagnosticsMixin:
         if ref is None or ref <= 0 or self._low_yield_today_kwh is None:
             return None
         return round(self._low_yield_today_kwh / ref, 3)
+
+
+    @property
+    def low_yield_coverage(self) -> float | None:
+        """Restprognose / Restbedarf bis Ladeende-SoC (Bedarfsprüfung, Phase 1).
+
+        ``None`` ohne Restprognose oder Live-State. ``inf`` wird auf einen
+        großen endlichen Wert abgebildet, damit der Sensor keinen "Infinity"-
+        String anzeigen muss.
+        """
+        if not self.data or "state" not in self.data:
+            return None
+        from .control_engine import low_yield_coverage_ratio
+
+        coverage = low_yield_coverage_ratio(
+            self.data["state"], self._params, self._params.charge_target
+        )
+        if coverage is None:
+            return None
+        if coverage == float("inf"):
+            return 999.0
+        return round(coverage, 2)
 
 
     @property

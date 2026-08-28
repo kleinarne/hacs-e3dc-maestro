@@ -1,4 +1,5 @@
 """Tests for the E3DC Maestro rule engine."""
+import math
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -18,6 +19,7 @@ from custom_components.e3dc_maestro.control_engine import (
     adaptive_emergency_reserve_soc,
     adaptive_ht_reserve_soc,
     low_slot_grid_charge_target,
+    low_yield_coverage_ratio,
     TariffSlot,
     TariffSchedule,
     TARIFF_HIGH,
@@ -2857,6 +2859,248 @@ class TestLowYieldDecide:
         assert decision.phase == PHASE_CORRIDOR
         assert decision.charge_power_limit == 9000
         assert "Korridor-Pause" not in decision.reason
+
+    def test_low_yield_target_soc_matches_charge_target_not_ramp(self):
+        # Phase 2: target_soc muss dem tatsächlich verfolgten Ladeende-Ziel
+        # entsprechen (params.charge_target), nicht dem an diesem Tick
+        # übersteuerten Tages-Rampenziel – sonst widersprechen sich Sensor
+        # und Aktion ("Ziel 67%" während bis 100% geladen wird).
+        p = _low_yield_params(charge_target=100)
+        s = self._state(soc=85, pv=3000, house=600, forecast_today=50.0)
+        decision = decide(s, p, _now(6, 15, 11))
+        assert decision.phase == PHASE_CORRIDOR
+        assert decision.target_soc == 100
+        assert "Ladeende-Ziel 100%" in decision.reason
+        assert "Rampen-Ziel" in decision.reason
+
+
+class TestLowYieldCoverageGate:
+    """Unit-Tests der Bedarfsprüfung (Phase 1: low_yield_coverage_ratio)."""
+
+    def test_none_without_any_forecast(self):
+        p = MaestroParams(battery_capacity_kwh=10.0, pv_forecast_safety_factor=1.0)
+        s = MaestroState(
+            soc=50, pv_power=0, house_power=0, grid_power=0, battery_power=0,
+            pv_forecast_remaining_p10_kwh=None, pv_forecast_remaining_kwh=None,
+        )
+        assert low_yield_coverage_ratio(s, p, target=100.0) is None
+
+    def test_none_when_capacity_invalid(self):
+        p = MaestroParams(battery_capacity_kwh=0.0, pv_forecast_safety_factor=1.0)
+        s = MaestroState(
+            soc=50, pv_power=0, house_power=0, grid_power=0, battery_power=0,
+            pv_forecast_remaining_p10_kwh=5.0,
+        )
+        assert low_yield_coverage_ratio(s, p, target=100.0) is None
+
+    def test_infinite_when_soc_already_at_target(self):
+        p = MaestroParams(battery_capacity_kwh=10.0, pv_forecast_safety_factor=1.0)
+        s = MaestroState(
+            soc=100, pv_power=0, house_power=0, grid_power=0, battery_power=0,
+            pv_forecast_remaining_p10_kwh=1.0,
+        )
+        assert low_yield_coverage_ratio(s, p, target=100.0) == math.inf
+
+    def test_p10_used_before_p50_fallback(self):
+        p = MaestroParams(battery_capacity_kwh=10.0, pv_forecast_safety_factor=1.0)
+        s = MaestroState(
+            soc=90, pv_power=0, house_power=0, grid_power=0, battery_power=0,
+            pv_forecast_remaining_p10_kwh=2.0, pv_forecast_remaining_kwh=100.0,
+        )
+        # needed = (100-90)/100*10 = 1.0 kWh; P10 (2.0) genutzt, nicht P50 (100.0)
+        assert low_yield_coverage_ratio(s, p, target=100.0) == pytest.approx(2.0)
+
+    def test_falls_back_to_p50_when_p10_missing(self):
+        p = MaestroParams(battery_capacity_kwh=10.0, pv_forecast_safety_factor=1.0)
+        s = MaestroState(
+            soc=90, pv_power=0, house_power=0, grid_power=0, battery_power=0,
+            pv_forecast_remaining_p10_kwh=None, pv_forecast_remaining_kwh=3.0,
+        )
+        assert low_yield_coverage_ratio(s, p, target=100.0) == pytest.approx(3.0)
+
+    def test_safety_factor_multiplies_need(self):
+        p = MaestroParams(battery_capacity_kwh=10.0, pv_forecast_safety_factor=2.0)
+        s = MaestroState(
+            soc=90, pv_power=0, house_power=0, grid_power=0, battery_power=0,
+            pv_forecast_remaining_p10_kwh=4.0,
+        )
+        # needed = 1.0 kWh × Sicherheitsfaktor 2 = 2.0 kWh min_required
+        assert low_yield_coverage_ratio(s, p, target=100.0) == pytest.approx(2.0)
+
+
+def _coverage_gate_params(**overrides) -> MaestroParams:
+    """Isoliert die Bedarfsprüfung: charge_target=Ladeende-SoC, safety_factor=1."""
+    base = dict(
+        installed_kwp=20.0,
+        max_charge_power=9000,
+        min_charge_power=200,
+        lower_corridor=500,
+        upper_corridor=9000,
+        charge_target=100,
+        winter_minimum_hour=11,
+        summer_charge_end=18.5,
+        battery_capacity_kwh=10.0,
+        pv_forecast_safety_factor=1.0,
+        low_yield_priority_enabled=True,
+        low_yield_threshold=0.5,
+        low_yield_reference_kwh_per_kwp=5.5,
+        spreading_enabled=True,
+        spreading_target_soc=100.0,
+        lower_corridor_pause_enabled=True,
+        ht_enabled=False,
+    )
+    base.update(overrides)
+    return MaestroParams(**base)
+
+
+class TestLowYieldGateDecide:
+    """Ende-zu-Ende ``decide()``: Bedarfsprüfung löst die Schwacher-PV-Tag-
+    Priorität ab, sobald die Restprognose den Restbedarf bis Ladeende-SoC deckt."""
+
+    def _state(self, *, soc, p10_remaining):
+        return MaestroState(
+            soc=soc, pv_power=3000, house_power=600, grid_power=0, battery_power=0,
+            pv_forecast_today_kwh=50.0,  # 50/110 = 0.4545 ≤ 0.5 → low_yield=True
+            pv_forecast_remaining_p10_kwh=p10_remaining,
+        )
+
+    def test_coverage_sufficient_releases_priority(self):
+        # soc=90, target=100, capacity=10 → needed=1.0 kWh. P10=1.5 deckt das
+        # bereits vollständig (≥ 1.0) → Priorität wird freigegeben.
+        p = _coverage_gate_params()
+        s = self._state(soc=90, p10_remaining=1.5)
+        d = decide(s, p, _now(6, 15, 11))
+        assert d.battery_priority is False
+        assert d.phase != PHASE_CORRIDOR or "Schwacher-PV-Tag" not in (d.reason or "")
+
+    def test_coverage_insufficient_keeps_priority(self):
+        # P10=0.5 kWh deckt den Bedarf (1.0 kWh) nicht → Priorität bleibt aktiv.
+        p = _coverage_gate_params()
+        s = self._state(soc=90, p10_remaining=0.5)
+        d = decide(s, p, _now(6, 15, 11))
+        assert d.phase == PHASE_CORRIDOR
+        assert d.charge_power_limit == p.max_charge_power
+        assert d.battery_priority is True
+        assert "Schwacher-PV-Tag" in d.reason
+
+    def test_no_forecast_data_keeps_legacy_behaviour(self):
+        # Ohne jede Restprognose bleibt low_yield_coverage None → Priorität
+        # greift wie vor Phase 1 (Altverhalten, keine Regression).
+        p = _coverage_gate_params()
+        s = self._state(soc=90, p10_remaining=None)
+        d = decide(s, p, _now(6, 15, 11))
+        assert d.phase == PHASE_CORRIDOR
+        assert d.charge_power_limit == p.max_charge_power
+        assert d.battery_priority is True
+
+    def test_hysteresis_release_requires_full_coverage(self):
+        # War die Priorität aktiv (previous_battery_priority=True), reicht
+        # eine knappe Deckung (0.95 < 1.0) nicht zur Freigabe.
+        p = _coverage_gate_params()
+        s = self._state(soc=90, p10_remaining=0.95)
+        d = decide(s, p, _now(6, 15, 11), previous_battery_priority=True)
+        assert d.battery_priority is True
+        assert d.phase == PHASE_CORRIDOR
+        assert d.charge_power_limit == p.max_charge_power
+
+    def test_hysteresis_release_at_full_coverage(self):
+        p = _coverage_gate_params()
+        s = self._state(soc=90, p10_remaining=1.0)
+        d = decide(s, p, _now(6, 15, 11), previous_battery_priority=True)
+        assert d.battery_priority is False
+
+    def test_hysteresis_reengage_below_threshold(self):
+        # War die Priorität bereits freigegeben (previous_battery_priority=False),
+        # löst erst eine deutlich schwächere Deckung (< 0.85) die Priorität erneut aus.
+        p = _coverage_gate_params()
+        s = self._state(soc=90, p10_remaining=0.9)
+        d = decide(s, p, _now(6, 15, 11), previous_battery_priority=False)
+        assert d.battery_priority is False
+
+        s_low = self._state(soc=90, p10_remaining=0.8)
+        d_low = decide(s_low, p, _now(6, 15, 11), previous_battery_priority=False)
+        assert d_low.battery_priority is True
+        assert d_low.phase == PHASE_CORRIDOR
+
+    def test_field_case_regression_28_aug_2026(self):
+        # Realer Feldfall: SoC 85 %, Kapazität 18 kWh, Ladeende-SoC 100 %,
+        # P10-Restprognose 21.9 kWh, Sicherheitsfaktor 1.5, Tagesprognose 59.9
+        # kWh bei Referenz 110 kWh (Schwelle 0.6) → schwacher Tag, aber die
+        # Restprognose deckt den Restbedarf (2.7 kWh) um ein Vielfaches →
+        # Priorität muss freigegeben sein, Spreading übernimmt.
+        p = _coverage_gate_params(
+            battery_capacity_kwh=18.0,
+            pv_forecast_safety_factor=1.5,
+            low_yield_threshold=0.6,
+        )
+        s = MaestroState(
+            soc=85, pv_power=7370, house_power=600, grid_power=-10, battery_power=6579,
+            pv_forecast_today_kwh=59.8956,
+            pv_forecast_remaining_p10_kwh=21.929,
+        )
+        d = decide(s, p, _now(8, 28, 10, 45))
+        assert d.battery_priority is False
+        assert d.charge_power_limit != p.max_charge_power
+        assert d.phase in (PHASE_SPREADING, PHASE_CORRIDOR, PHASE_IDLE)
+
+
+class TestSeasonalReferenceYield:
+    """Phase 3: opt-in saisonale Skalierung von reference_pv_yield_kwh()."""
+
+    def _params(self, **overrides):
+        base = dict(
+            installed_kwp=20.0,
+            low_yield_reference_kwh_per_kwp=5.5,
+            low_yield_reference_kwh=0.0,
+        )
+        base.update(overrides)
+        return MaestroParams(**base)
+
+    def test_opt_out_leaves_legacy_value_unchanged(self):
+        # Ohne low_yield_reference_seasonal ändert sich nichts, egal ob dt
+        # übergeben wird oder nicht – Altverhalten für bestehende Installationen.
+        p = self._params(low_yield_reference_seasonal=False)
+        ref_no_dt = reference_pv_yield_kwh(p)
+        ref_winter = reference_pv_yield_kwh(p, dt=_now(12, 21, 12))
+        ref_summer = reference_pv_yield_kwh(p, dt=_now(6, 21, 12))
+        assert ref_no_dt == ref_winter == ref_summer == 20.0 * 5.5
+
+    def test_seasonal_opt_in_december_lower_than_june(self):
+        p = self._params(low_yield_reference_seasonal=True)
+        ref_december = reference_pv_yield_kwh(p, dt=_now(12, 21, 12))
+        ref_june = reference_pv_yield_kwh(p, dt=_now(6, 21, 12))
+        assert ref_december < ref_june
+        assert ref_june == pytest.approx(20.0 * 5.5, rel=0.01)
+
+    def test_seasonal_opt_in_without_dt_falls_back_to_full_reference(self):
+        # Kein dt übergeben (z. B. Aufrufer ohne Zeitkontext) → keine
+        # Skalierung, auch wenn das Opt-in aktiv ist.
+        p = self._params(low_yield_reference_seasonal=True)
+        assert reference_pv_yield_kwh(p) == 20.0 * 5.5
+
+    def test_manual_override_and_stats_peak_stay_unscaled(self):
+        # Override und historischer Peak sind bewusst gesetzte/gemessene
+        # Werte und werden nicht saisonal herunterskaliert.
+        p = self._params(low_yield_reference_seasonal=True, low_yield_reference_kwh=50.0)
+        assert reference_pv_yield_kwh(p, dt=_now(12, 21, 12)) == 50.0
+        p2 = self._params(low_yield_reference_seasonal=True, installed_kwp=0.0)
+        assert reference_pv_yield_kwh(
+            p2, stats_peak_kwh=42.0, dt=_now(12, 21, 12)
+        ) == 42.0
+
+    def test_is_low_yield_day_passes_dt_through(self):
+        # kWp=20 → Referenz Sommer ≈110 kWh, Referenz Winter ≈33 kWh
+        # (Faktor 0.3 zur Sonnenwende). Tagesprognose 40 kWh liegt relativ
+        # zur (niedrigen) Winter-Referenz ÜBER der Schwelle (kein schwacher
+        # Tag – 40 kWh ist für einen Wintertag viel), relativ zur (hohen)
+        # Sommer-Referenz DARUNTER (40 kWh ist für einen Sommertag wenig).
+        p = self._params(low_yield_reference_seasonal=True, low_yield_threshold=0.5)
+        s = MaestroState(
+            soc=50, pv_power=0, house_power=0, grid_power=0, battery_power=0,
+            pv_forecast_today_kwh=40.0,
+        )
+        assert is_low_yield_day(s, p, dt=_now(12, 21, 12)) is False
+        assert is_low_yield_day(s, p, dt=_now(6, 21, 12)) is True
 
 
 class TestPeakDailyYieldKwh:

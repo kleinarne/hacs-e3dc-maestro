@@ -152,15 +152,18 @@ def decision_explanation(coord) -> str:
         forecast_prio = "[Prognose unzureichend" in reason
         if low_yield:
             text = (
-                f"Schwacher-PV-Tag: Ziel-SoC {target}% – Akku-Priorität aktiv, "
+                f"Schwacher-PV-Tag: Ladeende-Ziel {target}% (übersteuert das "
+                f"heutige Tages-Rampenziel) – Akku-Priorität aktiv, "
                 f"max_charge {cpl} W – E3DC nutzt PV-Überschuss selbst "
-                f"(nur PV, kein Netzbezug)."
+                f"(nur PV, kein Netzbezug), solange die Restprognose den "
+                "Ladebedarf nicht sicher deckt."
             )
         elif forecast_prio:
             text = (
-                f"Restprognose (P10) deckt den Ladebedarf nicht: Ziel-SoC {target}% – "
-                f"Akku-Priorität aktiv, max_charge {cpl} W – voller PV-Überschuss "
-                f"in den Akku statt Einspeisung."
+                f"Restprognose (P10) deckt den Ladebedarf nicht: Ladeende-Ziel "
+                f"{target}% (übersteuert das heutige Tages-Rampenziel) – "
+                f"Akku-Priorität aktiv, max_charge {cpl} W – voller "
+                "PV-Überschuss in den Akku statt Einspeisung."
             )
         else:
             text = (

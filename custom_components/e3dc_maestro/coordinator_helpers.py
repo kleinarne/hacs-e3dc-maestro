@@ -12,6 +12,12 @@ from typing import Any
 from .const import (
     CONF_DYNAMIC_TARIFF_ENABLED,
     CONF_TARIFF_SLOTS,
+    PHASE_CURTAILMENT_GUARD,
+    PHASE_EMERGENCY,
+    PHASE_FEED_IN_LIMIT,
+    PHASE_FORCE_DISCHARGE,
+    PHASE_MORNING_DISCHARGE,
+    PHASE_OFF,
     POWER_MODE_CHARGE,
     POWER_MODE_CHARGE_FROM_GRID,
     POWER_MODE_DISCHARGE,
@@ -142,6 +148,29 @@ def _limits_changed_vs_sent_values(
         return True
     return False
 
+
+
+_RAMP_BYPASS_PHASES = frozenset({
+    PHASE_OFF, PHASE_EMERGENCY, PHASE_FEED_IN_LIMIT, PHASE_CURTAILMENT_GUARD,
+    PHASE_MORNING_DISCHARGE, PHASE_FORCE_DISCHARGE,
+})
+
+
+def _ramp_bypass_for_phase(decision: MaestroDecision) -> bool:
+    """True wenn die Anlauf-Rampe (A2) für diese Entscheidung übersprungen wird.
+
+    Zwei unabhängige Gründe:
+      1. Die Phase selbst verlangt sofortige volle Leistung (Notfall,
+         Einspeiseschutz, Abregelschutz, Vorentladung, Zwangs-Entladung).
+      2. ``decision.battery_priority`` – Abschnitt 6.96 (Schwacher-PV-Tag /
+         Prognose-Gate) hat diesen Tick tatsächlich gegriffen.
+
+    Ersetzt das frühere ``self.low_yield_day_active`` (Ganztags-Flag), das
+    den Ramp-Bypass für *alle* Phasen den ganzen Tag über abschaltete, auch
+    wenn Abschnitt 6.96 diesen Tick gar nicht aktiv war (z. B. weil die
+    Bedarfsprüfung die Priorität bereits freigegeben hatte).
+    """
+    return decision.phase in _RAMP_BYPASS_PHASES or decision.battery_priority
 
 
 def _ramp_bypass_due_to_resync(

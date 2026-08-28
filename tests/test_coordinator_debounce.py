@@ -1,5 +1,10 @@
 """Tests for RSCP power-limit debounce and power_mode payload."""
 from custom_components.e3dc_maestro.const import (
+    PHASE_CORRIDOR,
+    PHASE_CURTAILMENT_GUARD,
+    PHASE_EMERGENCY,
+    PHASE_IDLE,
+    PHASE_SPREADING,
     POWER_MODE_CHARGE,
     POWER_MODE_DISCHARGE,
     POWER_MODE_IDLE,
@@ -10,6 +15,7 @@ from custom_components.e3dc_maestro.coordinator import (
     _effective_discharge_limit_w,
     _limits_changed_vs_sent_values,
     _ramp_bypass_due_to_resync,
+    _ramp_bypass_for_phase,
 )
 from custom_components.e3dc_maestro.control_engine import MaestroDecision
 
@@ -93,6 +99,51 @@ def test_ramp_bypass_resync_scales_with_ramp_size():
     """Bei großzügiger Rampe (1000 W/Zyklus) gilt 2 × ramp = 2000 W als Schwelle."""
     assert _ramp_bypass_due_to_resync(1500, 0, 1000) is False
     assert _ramp_bypass_due_to_resync(2500, 0, 1000) is True
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Phase 5: Ramp-Bypass hängt an decision.battery_priority, nicht am
+# Ganztags-Flag low_yield_day_active.
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def test_ramp_bypass_active_for_hardcoded_phases_without_battery_priority():
+    """Notfall-Phasen lösen den Bypass unabhängig von battery_priority aus."""
+    d = MaestroDecision(phase=PHASE_EMERGENCY, reason="x", battery_priority=False)
+    assert _ramp_bypass_for_phase(d) is True
+
+    d2 = MaestroDecision(phase=PHASE_CURTAILMENT_GUARD, reason="x", battery_priority=False)
+    assert _ramp_bypass_for_phase(d2) is True
+
+
+def test_ramp_bypass_inactive_for_normal_phase_without_battery_priority():
+    """Ohne battery_priority und außerhalb der Sonderphasen bleibt die Rampe aktiv."""
+    d = MaestroDecision(phase=PHASE_CORRIDOR, reason="x", battery_priority=False)
+    assert _ramp_bypass_for_phase(d) is False
+
+    d2 = MaestroDecision(phase=PHASE_SPREADING, reason="x", battery_priority=False)
+    assert _ramp_bypass_for_phase(d2) is False
+
+
+def test_ramp_bypass_active_when_battery_priority_set():
+    """Abschnitt 6.96 (Schwacher-PV-Tag / Prognose-Gate) hat diesen Tick gegriffen."""
+    d = MaestroDecision(phase=PHASE_CORRIDOR, reason="x", battery_priority=True)
+    assert _ramp_bypass_for_phase(d) is True
+
+
+def test_ramp_bypass_not_tied_to_day_flag_only_to_decision():
+    """Kernpunkt Phase 5: Sobald battery_priority in der Entscheidung wieder
+    False ist (z. B. weil die Bedarfsprüfung freigegeben hat), bleibt die
+    Rampe aktiv – unabhängig davon, ob der Tag insgesamt als "schwach"
+    markiert war. Der frühere Bug war das Ganztags-Flag, das dies verhinderte."""
+    released = MaestroDecision(phase=PHASE_SPREADING, reason="x", battery_priority=False)
+    assert _ramp_bypass_for_phase(released) is False
+
+    still_active = MaestroDecision(phase=PHASE_CORRIDOR, reason="x", battery_priority=True)
+    assert _ramp_bypass_for_phase(still_active) is True
+
+    idle = MaestroDecision(phase=PHASE_IDLE, reason="x", battery_priority=False)
+    assert _ramp_bypass_for_phase(idle) is False
 
 
 # ──────────────────────────────────────────────────────────────────────────────

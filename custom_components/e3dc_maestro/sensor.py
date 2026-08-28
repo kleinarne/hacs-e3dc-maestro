@@ -790,6 +790,8 @@ class MaestroSensor(CoordinatorEntity[E3DCMaestroCoordinator], SensorEntity):
                 "sent_charge_power_limit": coord.last_sent_charge_limit,
                 "sent_discharge_power_limit": coord.last_sent_discharge_limit,
                 "feed_in_excess_w": dec.feed_in_excess_w,
+                "battery_priority": dec.battery_priority,
+                "low_yield_coverage": coord.low_yield_coverage,
                 "timestamp": coord.last_action_info.get("timestamp"),
             }
         if key == "autonomy_time":
