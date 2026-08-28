@@ -225,7 +225,7 @@ button_card_templates:
         - background: |
             [[[
               const p = states['sensor.e3dc_maestro_regelphase'] ? states['sensor.e3dc_maestro_regelphase'].state : '';
-              const low = states['binary_sensor.e3dc_maestro_schwacher_pv_tag'] && states['binary_sensor.e3dc_maestro_schwacher_pv_tag'].state === 'on';
+              const low = states['binary_sensor.e3dc_maestro_akku_prioritat_aktiv'] && states['binary_sensor.e3dc_maestro_akku_prioritat_aktiv'].state === 'on';
               const palette = {
                 emergency:          ['#b71c1c', '#e53935'],
                 feed_in_limit:      ['#e65100', '#fb8c00'],
@@ -283,7 +283,7 @@ button_card_templates:
       icon: |
         [[[
           const p = states['sensor.e3dc_maestro_regelphase'] ? states['sensor.e3dc_maestro_regelphase'].state : '';
-          const low = states['binary_sensor.e3dc_maestro_schwacher_pv_tag'] && states['binary_sensor.e3dc_maestro_schwacher_pv_tag'].state === 'on';
+          const low = states['binary_sensor.e3dc_maestro_akku_prioritat_aktiv'] && states['binary_sensor.e3dc_maestro_akku_prioritat_aktiv'].state === 'on';
           const iconmap = {
             emergency: 'alert-octagon', curtailment: 'weather-sunny-alert',
             feed_in_limit: 'transmission-tower-off', force_discharge: 'battery-arrow-down',
@@ -676,13 +676,13 @@ views:
           - type: conditional
             conditions:
               - condition: state
-                entity: binary_sensor.e3dc_maestro_schwacher_pv_tag
+                entity: binary_sensor.e3dc_maestro_akku_prioritat_aktiv
                 state: "on"
             card:
               type: custom:button-card
               template: status_chip
-              entity: binary_sensor.e3dc_maestro_schwacher_pv_tag
-              name: Schwacher PV-Tag
+              entity: binary_sensor.e3dc_maestro_akku_prioritat_aktiv
+              name: Akku-Priorität
               icon: mdi:weather-cloudy-clock
               styles:
                 icon: [color: "#fb8c00"]
@@ -731,7 +731,7 @@ views:
                 value: |
                   [[[
                     return ['notfallladung_aktiv','abregelschutz_aktiv','einspeisedrosselung_aktiv',
-                            'ht_schutz_aktiv','netzladung_aktiv','schwacher_pv_tag','ladesperre_aktiv','entladesperre_aktiv']
+                            'ht_schutz_aktiv','netzladung_aktiv','akku_prioritat_aktiv','ladesperre_aktiv','entladesperre_aktiv']
                       .some(k => states['binary_sensor.e3dc_maestro_' + k] &&
                                   states['binary_sensor.e3dc_maestro_' + k].state === 'on');
                   ]]]
@@ -1092,17 +1092,24 @@ views:
                 'idle': 'Leerlauf',
                 'normal': 'Normalbetrieb'
               } %}
-              {% set low = is_state('binary_sensor.e3dc_maestro_schwacher_pv_tag', 'on') %}
+              {% set weak_day = is_state('binary_sensor.e3dc_maestro_schwacher_pv_tag', 'on') %}
+              {% set priority = is_state('binary_sensor.e3dc_maestro_akku_prioritat_aktiv', 'on') %}
               {% set q = (states('sensor.e3dc_maestro_pv_tag_quote') | float(0) * 100) | round(0) %}
 
               ## {{ names.get(p, p) | default('—') }}
 
               {{ states('sensor.e3dc_maestro_entscheidungserklarung') }}
 
-              {% if low %}
+              {% if priority %}
 
-              ⚠️ **Schwacher PV-Tag** ({{ q }} % vom Referenztag) — Akku-Ladung
-              priorisiert, Spreading & Korridor-Pause für heute ausgesetzt.
+              ⚠️ **Akku-Priorität aktiv** ({{ q }} % vom Referenztag) — Akku-Ladung
+              priorisiert, Spreading & Korridor-Pause pausiert, bis die Restprognose
+              den Bedarf bis zum Ladeende-SoC deckt.
+              {% elif weak_day %}
+
+              ℹ️ Heute als PV-schwacher Tag erkannt ({{ q }} % vom Referenztag) —
+              Restprognose deckt den Bedarf aktuell aber ausreichend, keine
+              Akku-Priorität nötig.
               {% endif %}
 
           - type: conditional
@@ -1267,9 +1274,11 @@ views:
           - type: entities
             entities:
               - entity: switch.e3dc_maestro_schwacher_pv_tag_prioritat
-                name: Priorität aktiv
+                name: Feature aktiviert (Einstellung)
               - entity: binary_sensor.e3dc_maestro_schwacher_pv_tag
-                name: Heute erkannt
+                name: Heute als PV-schwach erkannt (Ganztags-Flag)
+              - entity: binary_sensor.e3dc_maestro_akku_prioritat_aktiv
+                name: Akku-Priorität aktuell aktiv (Bedarfsgate)
               - entity: sensor.e3dc_maestro_pv_tagesprognose
                 name: PV-Tagesprognose
               - entity: sensor.e3dc_maestro_pv_referenz_ertrag
@@ -1341,7 +1350,9 @@ views:
               - entity: sensor.e3dc_maestro_letzte_aktion
                 name: Aktion
               - entity: binary_sensor.e3dc_maestro_schwacher_pv_tag
-                name: Schwacher PV-Tag
+                name: Schwacher PV-Tag (Ganztags-Flag)
+              - entity: binary_sensor.e3dc_maestro_akku_prioritat_aktiv
+                name: Akku-Priorität aktiv (Gate)
 
   # ========================================================================
   # TAB 3: LADEN (Ladestrategie & Optimierung)
@@ -1508,9 +1519,11 @@ views:
           - type: entities
             entities:
               - entity: switch.e3dc_maestro_schwacher_pv_tag_prioritat
-                name: Priorität aktiv
+                name: Feature aktiviert (Einstellung)
               - entity: binary_sensor.e3dc_maestro_schwacher_pv_tag
-                name: Heute erkannt
+                name: Heute als PV-schwach erkannt (Ganztags-Flag)
+              - entity: binary_sensor.e3dc_maestro_akku_prioritat_aktiv
+                name: Akku-Priorität aktuell aktiv (Bedarfsgate)
               - entity: sensor.e3dc_maestro_pv_tagesprognose
                 name: PV-Tagesprognose
               - entity: sensor.e3dc_maestro_pv_referenz_ertrag

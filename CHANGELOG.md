@@ -11,6 +11,30 @@ einen eigenen Versionsabschnitt verschieben.
 
 ---
 
+## [0.3.17] – Dashboard: Akku-Priorität korrekt vom Ganztags-Flag getrennt (2026-08-28)
+
+### Behoben
+- **Irreführende Status-Meldungen im Dashboard:** Nach der v0.3.16-Bedarfsprüfung
+  konnte das Dashboard weiterhin "Akku-Ladung priorisiert" anzeigen, obwohl das
+  neue Gate (`battery_priority`) die Priorität bereits freigegeben hatte – die
+  Status-Chips, die Warnzeile unter der Entscheidungserklärung und der
+  "Eingriffe aktiv"-Zähler hingen alle am alten Ganztags-Flag
+  `binary_sensor.e3dc_maestro_schwacher_pv_tag`, das nur die Tagesprognose
+  widerspiegelt und nie mehr gegen den tatsächlichen Bedarf geprüft wird.
+- **Neuer Binärsensor `binary_sensor.e3dc_maestro_akku_prioritat_aktiv`**
+  (gebunden an `last_decision.battery_priority`) zeigt den tatsächlich aktiven
+  Priorität-Status. Beide Dashboards (Classic & Modern) verwenden ihn jetzt für
+  alle Live-Status-Anzeigen; `schwacher_pv_tag` bleibt als reiner
+  Tages-Kontext-Sensor ("heute als PV-schwach erkannt") in den
+  Diagnose-/Einstellungslisten erhalten und ist dort entsprechend beschriftet.
+
+### Nach dem Update
+HA neu starten oder Integration neu laden, danach Browser hart neu laden
+(Cmd/Ctrl+Shift+R). Das Community-Dashboard ist eine Lovelace-Strategy und
+übernimmt die Änderung automatisch.
+
+---
+
 ## [0.3.16] – Schwacher-PV-Tag-Logik: Bedarfsprüfung statt Ganztags-Flag (2026-08-28)
 
 ### Geändert – Schwacher-PV-Tag-Logik: Bedarfsprüfung statt Ganztags-Flag

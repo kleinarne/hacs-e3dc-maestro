@@ -97,6 +97,16 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[MaestroBinarySensorDescription, ...] = (
         icon="mdi:weather-cloudy-clock",
         value_fn=lambda coord: coord.low_yield_day_active,
     ),
+    # v0.3.16: Ganztags-Flag oben zeigt nur "Tag als PV-schwach erkannt" –
+    # dieser Sensor zeigt, ob die Akku-Priorität AKTUELL greift (Bedarfsgate).
+    MaestroBinarySensorDescription(
+        key="battery_priority_active",
+        name="Akku-Priorität aktiv",
+        icon="mdi:battery-charging-high",
+        value_fn=lambda coord: bool(
+            coord.last_decision and coord.last_decision.battery_priority
+        ),
+    ),
     # v0.2.0: Sanity-Check – Netzladung trotz festem Tarif
     MaestroBinarySensorDescription(
         key="unjustified_grid_charge",
