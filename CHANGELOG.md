@@ -35,8 +35,9 @@ NT-Verträge, um die Zeit bis zur PV-Deckung zu überbrücken.
 - Neuer Binärsensor **Netzladung aktiv** (`binary_sensor.e3dc_maestro_netzladung_aktiv`).
 - **Dashboard:** Neue Phase `grid_charge` in Classic- und Modern-Dashboard
   (Status-Chip „Netzladung", Phasen-Label/Farbe, Glossar) sowie im Tarif-Slots-
-  Block. Community-Dashboard nach dem Update einmal neu anlegen, damit die
-  Kacheln erscheinen.
+  Block. Das Community-Dashboard ist eine Lovelace-Strategy und aktualisiert
+  sich automatisch – nach dem Update genügt **HA-Neustart + Browser-Hard-Refresh**
+  (Cmd/Ctrl+Shift+R), kein Neu-Anlegen nötig.
 
 ### Doku
 - Tarif-Slot-Beschreibung korrigiert: `low` ist ein günstiges Fenster mit
