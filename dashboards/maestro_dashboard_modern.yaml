@@ -307,6 +307,7 @@ button_card_templates:
             morning_cap: 'Morning-Cap', corridor: 'Lade-Korridor',
             spreading: 'Spreading', predischarge: 'Vorentladung',
             reserve_protection: 'Reserve-Schutz', ht_protection: 'HT-Schutz',
+            grid_charge: 'Netzladung (günstig)',
             evcc_pause: 'EVCC-Pause', idle: 'Leerlauf', normal: 'Normalbetrieb'
           };
           return names[p] || p;
@@ -1071,6 +1072,7 @@ views:
                 'predischarge': 'Vorentladung',
                 'reserve_protection': 'Reserve-Schutz',
                 'ht_protection': 'HT-Schutz',
+                'grid_charge': 'Netzladung (günstig)',
                 'evcc_pause': 'EVCC-Pause',
                 'hold': 'Halten',
                 'idle': 'Leerlauf',

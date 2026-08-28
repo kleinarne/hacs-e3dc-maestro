@@ -79,14 +79,19 @@ class CoordinatorSensorsMixin:
                 opts[CONF_PV_FORECAST_SENSOR], PV_FORECAST_P10_ATTR
             )
 
-        # F1+: Forward-Looking inputs (morgen PV + Wochentags-Verbrauch)
+        # F1+: Forward-Looking inputs (morgen PV + Wochentags-Verbrauch).
+        # Auch für die prognosebasierte Netzladung im low-Slot benötigt.
+        _needs_tomorrow = (
+            self._params.forward_looking_enabled
+            or getattr(self._params, "low_slot_forecast_based", False)
+        )
         tomorrow_pv: float | None = None
-        if self._params.forward_looking_enabled and opts.get(CONF_TOMORROW_PV_SENSOR):
+        if _needs_tomorrow and opts.get(CONF_TOMORROW_PV_SENSOR):
             tomorrow_pv = self._read_float(
                 opts[CONF_TOMORROW_PV_SENSOR], required=False
             )
         tomorrow_consumption: float | None = None
-        if self._params.forward_looking_enabled and self._consumption_stats is not None:
+        if _needs_tomorrow and self._consumption_stats is not None:
             tomorrow_local = dt_util.now() + timedelta(days=1)
             tomorrow_consumption = self._consumption_stats.weekday_total_kwh(
                 tomorrow_local.weekday()

@@ -17,9 +17,11 @@ from custom_components.e3dc_maestro.control_engine import (
     time_to_target_power,
     adaptive_emergency_reserve_soc,
     adaptive_ht_reserve_soc,
+    low_slot_grid_charge_target,
     TariffSlot,
     TariffSchedule,
     TARIFF_HIGH,
+    TARIFF_LOW,
 )
 from custom_components.e3dc_maestro.const import (
     PHASE_CORRIDOR,
@@ -27,6 +29,7 @@ from custom_components.e3dc_maestro.const import (
     PHASE_EMERGENCY,
     PHASE_EVCC_PAUSE,
     PHASE_FEED_IN_LIMIT,
+    PHASE_GRID_CHARGE,
     PHASE_HT_PROTECTION,
     PHASE_IDLE,
     PHASE_MORNING_CAP,
@@ -36,6 +39,7 @@ from custom_components.e3dc_maestro.const import (
     PHASE_OFF,
     PHASE_RESERVE_PROTECTION,
     PHASE_SPREADING,
+    POWER_MODE_CHARGE,
     POWER_MODE_IDLE,
     POWER_MODE_DISCHARGE,
 )
@@ -1843,6 +1847,150 @@ class TestSlotMinReserveOverridesHtMin:
         state = MaestroState(soc=80, pv_power=0, house_power=1000, grid_power=0, battery_power=0)
         d = decide(state, params, _now(1, 15, 10))
         assert d.phase != PHASE_HT_PROTECTION
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Aktive Netzladung im low-Slot (NT-Fenster) – Issue #2 Follow-up
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class TestLowSlotGridCharge:
+    """`low_slot_grid_charge_enabled` lädt im low-Slot aktiv aus dem Netz."""
+
+    def _params(self, **overrides):
+        low_slot = TariffSlot(
+            weekdays=frozenset(range(7)), start_h=0, end_h=24, class_=TARIFF_LOW,
+        )
+        base = {
+            **DEFAULT_PARAMS.__dict__,
+            "ht_enabled": False,
+            "seasonal_reserve_enabled": False,
+            "tariff_schedule": TariffSchedule(slots=[low_slot]),
+            "low_slot_grid_charge_enabled": True,
+            "low_slot_target_soc": 60.0,
+            "max_grid_charge_kwh": 3.0,
+            "tariff_mode": "fixed",
+        }
+        base.update(overrides)
+        return MaestroParams(**base)
+
+    def _state(self, soc=30):
+        return MaestroState(
+            soc=soc, pv_power=0, house_power=1000, grid_power=0, battery_power=0,
+        )
+
+    def test_active_grid_charge_below_target_even_when_fixed(self):
+        """Kernfall Issue #2: fester Tarif, low-Slot, SoC unter Ziel → Netzladung."""
+        p = self._params()
+        d = decide(self._state(soc=30), p, _now(1, 15, 2))
+        assert d.phase == PHASE_GRID_CHARGE
+        assert d.power_mode == POWER_MODE_CHARGE
+        assert d.charge_power_limit == p.max_charge_power
+        assert d.target_soc == 60.0
+
+    def test_no_charge_when_target_reached(self):
+        p = self._params()
+        d = decide(self._state(soc=60), p, _now(1, 15, 2))
+        assert d.phase != PHASE_GRID_CHARGE
+
+    def test_no_charge_when_budget_exhausted(self):
+        p = self._params()
+        d = decide(
+            self._state(soc=30), p, _now(1, 15, 2),
+            grid_charged_today_kwh=3.0,
+        )
+        assert d.phase != PHASE_GRID_CHARGE
+
+    def test_disabled_by_default(self):
+        p = self._params(low_slot_grid_charge_enabled=False)
+        d = decide(self._state(soc=30), p, _now(1, 15, 2))
+        assert d.phase != PHASE_GRID_CHARGE
+
+    def test_not_in_high_slot(self):
+        high_slot = TariffSlot(
+            weekdays=frozenset(range(7)), start_h=0, end_h=24, class_=TARIFF_HIGH,
+        )
+        p = self._params(tariff_schedule=TariffSchedule(slots=[high_slot]))
+        d = decide(self._state(soc=30), p, _now(1, 15, 2))
+        assert d.phase != PHASE_GRID_CHARGE
+
+    def test_curtailment_guard_has_priority(self):
+        p = self._params()
+        d = decide(
+            self._state(soc=30), p, _now(1, 15, 2),
+            curtailment_guard_active=True,
+        )
+        assert d.phase != PHASE_GRID_CHARGE
+
+    def test_emergency_has_priority(self):
+        """SoC unter Ladeschwelle → Notfallladung schlägt grid_charge."""
+        p = self._params()
+        d = decide(self._state(soc=10), p, _now(1, 15, 2))
+        assert d.phase == PHASE_EMERGENCY
+
+
+class TestLowSlotGridChargeForecast:
+    """Prognosebasierte Netzlade-Menge im low-Slot."""
+
+    def _params(self, **overrides):
+        low_slot = TariffSlot(
+            weekdays=frozenset(range(7)), start_h=0, end_h=24, class_=TARIFF_LOW,
+        )
+        base = {
+            **DEFAULT_PARAMS.__dict__,
+            "ht_enabled": False,
+            "seasonal_reserve_enabled": False,
+            "tariff_schedule": TariffSchedule(slots=[low_slot]),
+            "low_slot_grid_charge_enabled": True,
+            "low_slot_target_soc": 80.0,
+            "low_slot_forecast_based": True,
+            "battery_capacity_kwh": 10.0,
+            "max_grid_charge_kwh": 10.0,
+            "tariff_mode": "fixed",
+        }
+        base.update(overrides)
+        return MaestroParams(**base)
+
+    def _state(self, soc=20, tomorrow_pv=None, tomorrow_cons=None):
+        return MaestroState(
+            soc=soc, pv_power=0, house_power=1000, grid_power=0, battery_power=0,
+            tomorrow_pv_kwh=tomorrow_pv, tomorrow_consumption_kwh=tomorrow_cons,
+        )
+
+    def test_target_scaled_to_deficit(self):
+        # Defizit = 12 - 8 = 4 kWh; /10 kWh = 40 % → unter Obergrenze 80 %.
+        p = self._params()
+        assert low_slot_grid_charge_target(
+            self._state(tomorrow_pv=8.0, tomorrow_cons=12.0), p
+        ) == 40.0
+
+    def test_target_capped_at_configured_upper_bound(self):
+        # Defizit riesig → auf low_slot_target_soc (80 %) gedeckelt.
+        p = self._params()
+        assert low_slot_grid_charge_target(
+            self._state(tomorrow_pv=0.0, tomorrow_cons=30.0), p
+        ) == 80.0
+
+    def test_no_charge_when_pv_covers_tomorrow(self):
+        # PV deckt morgen alles → Defizit 0 → Ziel 0 → keine Netzladung.
+        p = self._params()
+        d = decide(self._state(soc=20, tomorrow_pv=20.0, tomorrow_cons=10.0), p, _now(1, 15, 2))
+        assert d.phase != PHASE_GRID_CHARGE
+
+    def test_charges_only_needed_amount(self):
+        # Defizit 4 kWh → Ziel 40 %; SoC 20 % < 40 % → Netzladung mit Ziel 40 %.
+        p = self._params()
+        d = decide(self._state(soc=20, tomorrow_pv=8.0, tomorrow_cons=12.0), p, _now(1, 15, 2))
+        assert d.phase == PHASE_GRID_CHARGE
+        assert d.target_soc == 40.0
+
+    def test_fallback_to_fixed_target_without_forecast(self):
+        # Prognose an, aber keine Sensordaten → fester Ziel-SoC 80 %.
+        p = self._params()
+        assert low_slot_grid_charge_target(self._state(), p) == 80.0
+        d = decide(self._state(soc=20), p, _now(1, 15, 2))
+        assert d.phase == PHASE_GRID_CHARGE
+        assert d.target_soc == 80.0
 
 
 # ──────────────────────────────────────────────────────────────────────────────

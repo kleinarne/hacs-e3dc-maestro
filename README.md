@@ -305,6 +305,15 @@ Charges the battery from the grid when the spot electricity price is cheap.
 | **Price sensor (€/kWh)** | – | e.g. Tibber or aWATTar price sensor |
 | **Cheap threshold (€/kWh)** | 0.10 | Below this price, grid charging is triggered |
 | **Max. grid charge/day (kWh)** | 3.0 | Daily cap for grid-charged energy |
+| **Active grid charge in low slot** | off | In a `low` slot, actively charges from the grid up to the target SoC — **regardless of tariff mode** (phase `grid_charge`). For classic off-peak (NT) windows |
+| **Grid charge target in low slot (% SoC)** | 60 | Target SoC charged from the grid inside a `low` slot. Capped by Max. grid charge/day. Acts as upper bound when forecast-based |
+| **Forecast-based grid charge amount** | off | Instead of a fixed target SoC, charges only as much as tomorrow's PV/consumption forecast requires (deficit = consumption − PV). Uses the *tomorrow PV* + *tomorrow consumption* sensors; falls back to the fixed target when no data |
+
+> **Passive vs. active `low` slot:** Without this option the `low` class is
+> purely passive — it only lifts the PV-surplus ceiling, and only when
+> `tariff_mode=dynamic`. For a classic peak/off-peak contract (fixed tariff),
+> enable **Active grid charge in low slot** so the off-peak window is actually
+> used to recharge.
 
 ---
 

@@ -99,6 +99,13 @@ def decision_explanation(coord) -> str:
             "sperrt die weitere Entladung, damit für den Rest des teuren "
             "Hochtarif-Fensters genug Kapazität erhalten bleibt."
         )
+    elif phase == "grid_charge":
+        target = _f(dec.target_soc)
+        text = (
+            f"Netzladung im günstigen Tarif-Slot: Der Akku wird aktiv aus dem "
+            f"Netz auf {target}% geladen, um die Zeit bis zur PV-Deckung zu "
+            "überbrücken. Begrenzt durch das Tagesbudget für Netzladung."
+        )
     elif phase == "force_discharge":
         pw = _f(getattr(p, "force_discharge_power_w", None))
         text = (

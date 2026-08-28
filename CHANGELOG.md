@@ -11,6 +11,43 @@ einen eigenen Versionsabschnitt verschieben.
 
 ---
 
+## [0.3.15] – Aktive Netzladung im low-Slot (NT-Fenster) (2026-08-28)
+
+**Feature.** Follow-up zu [#2](https://github.com/TommiG1/hacs-e3dc-maestro/issues/2):
+Ein `low`-Slot kann den Akku jetzt aktiv aus dem Netz nachladen — für klassische
+NT-Verträge, um die Zeit bis zur PV-Deckung zu überbrücken.
+
+### Neu
+- **Aktive Netzladung im `low`-Slot (NT-Fenster):** Neue Phase `grid_charge`.
+  Ist die Option **Aktive Netzladung im low-Slot** aktiviert, lädt Maestro in
+  einem `low`-Tarif-Fenster **aktiv aus dem Netz** bis zum eingestellten
+  **Netzlade-Ziel (% SoC)** — unabhängig vom Tarif-Modus. Damit überbrückt ein
+  klassischer NT-Vertrag die Zeit bis zur PV-Deckung, statt später im teureren
+  Normaltarif nachladen zu müssen (Follow-up zu
+  [#2](https://github.com/TommiG1/hacs-e3dc-maestro/issues/2)). Die aus dem
+  Netz geladene Energie ist durch das Tagesbudget **Max. Netzladung/Tag (kWh)**
+  begrenzt (dieses wird jetzt erstmals in der Engine ausgewertet).
+- **Prognosebasierte Netzlade-Menge (Option):** Mit **Netzlade-Menge
+  prognosebasiert** lädt Maestro im `low`-Slot nur so viel nach, wie laut
+  morgiger PV-/Verbrauchsprognose nötig ist (Defizit = Verbrauch − PV), statt
+  stur bis zum festen Ziel-SoC. Der Ziel-SoC wirkt dann als Obergrenze; ohne
+  Prognosedaten gilt weiterhin der feste Ziel-SoC.
+- Neuer Binärsensor **Netzladung aktiv (günstiger Slot)** (`grid_charge_active`).
+
+### Doku
+- Tarif-Slot-Beschreibung korrigiert: `low` ist ein günstiges Fenster mit
+  optionaler aktiver Netzladung; `high` = Akku deckt Haus bis zur Reserve,
+  darunter Entladesperre (die alte Formulierung „high = entladen sperren" war
+  seit dem HT-Floor-Fix in v0.3.14 irreführend).
+
+### Hinweis
+Bislang war die `low`-Klasse rein passiv (sie hob nur das PV-Überschuss-Ceiling
+auf, und das auch nur bei `tariff_mode=dynamic`). Nachts wurde daher gar keine
+Netzladung ausgelöst. Wer das bisherige Verhalten will, lässt die neue Option
+einfach deaktiviert (Standard).
+
+---
+
 ## [0.3.14] – HT-Schutz Entladelogik korrigiert (2026-08-25)
 
 **Bugfix.** Der HT-Schutz hat die Akku-Entladung im Hochtarif genau verkehrt

@@ -321,6 +321,15 @@ Lädt den Akku aus dem Netz wenn der Börsenstrompreis günstig ist.
 | **Preis-Sensor (€/kWh)** | – | z. B. Tibber oder aWATTar-Sensor |
 | **Günstig-Schwelle (€/kWh)** | 0.10 | Unter diesem Preis wird aus dem Netz geladen |
 | **Max. Netzladung/Tag (kWh)** | 3.0 | Tägliches Limit für Netz-Ladungen |
+| **Aktive Netzladung im low-Slot** | aus | Lädt in einem `low`-Slot aktiv aus dem Netz bis zum Ziel-SoC – **unabhängig vom Tarif-Modus** (Phase `grid_charge`). Für klassische NT-Fenster |
+| **Netzlade-Ziel im low-Slot (% SoC)** | 60 | Ziel-SoC, bis zu dem im `low`-Slot aus dem Netz geladen wird. Begrenzt durch Max. Netzladung/Tag. Bei prognosebasierter Menge = Obergrenze |
+| **Netzlade-Menge prognosebasiert** | aus | Statt festem Ziel-SoC wird nur so viel nachgeladen, wie laut morgiger PV-/Verbrauchsprognose nötig ist (Defizit = Verbrauch − PV). Nutzt die Sensoren *Prognose morgen* + *Verbrauch morgen*; ohne Daten gilt der feste Ziel-SoC |
+
+> **`low`-Slot ohne aktive Netzladung:** Ohne diese Option ist die Klasse `low`
+> rein passiv – sie erlaubt Netzladung nur, wenn zusätzlich `tariff_mode=dynamic`
+> gesetzt ist und eine andere Phase ohnehin laden will. Für ein klassisches
+> HT/NT-Modell (fester Tarif) aktiviere **Aktive Netzladung im low-Slot**, damit
+> das NT-Fenster wirklich zum Nachladen genutzt wird.
 
 ---
 

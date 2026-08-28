@@ -19,6 +19,7 @@ from .const import (
     PHASE_CURTAILMENT_GUARD,
     PHASE_EMERGENCY,
     PHASE_FEED_IN_LIMIT,
+    PHASE_GRID_CHARGE,
     PHASE_HT_PROTECTION,
     TARIFF_MODE_FIXED,
     UNJUSTIFIED_GRID_CHARGE_THRESHOLD_KWH,
@@ -56,6 +57,13 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[MaestroBinarySensorDescription, ...] = (
         name="Notfallladung aktiv",
         device_class=BinarySensorDeviceClass.RUNNING,
         value_fn=lambda coord: coord.last_phase == PHASE_EMERGENCY,
+    ),
+    MaestroBinarySensorDescription(
+        key="grid_charge_active",
+        name="Netzladung aktiv (günstiger Slot)",
+        icon="mdi:transmission-tower-import",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        value_fn=lambda coord: coord.last_phase == PHASE_GRID_CHARGE,
     ),
     MaestroBinarySensorDescription(
         key="curtailment_guard_active",

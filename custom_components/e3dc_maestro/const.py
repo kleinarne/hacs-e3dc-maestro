@@ -82,6 +82,14 @@ CONF_DYNAMIC_TARIFF_ENABLED = "dynamic_tariff_enabled"
 CONF_PRICE_SENSOR = "price_sensor"                    # entity_id
 CONF_CHEAP_THRESHOLD = "cheap_threshold"              # €/kWh
 CONF_MAX_GRID_CHARGE_KWH = "max_grid_charge_kwh"      # per day
+# Aktive Netzladung im low-Slot (NT-Fenster). Unabhängig vom tariff_mode:
+# lädt AKTIV aus dem Netz bis zum Ziel-SoC, begrenzt durch max_grid_charge_kwh.
+CONF_LOW_SLOT_GRID_CHARGE_ENABLED = "low_slot_grid_charge_enabled"  # bool
+CONF_LOW_SLOT_TARGET_SOC = "low_slot_target_soc"                    # % SoC-Ziel
+# Prognosebasierte Netzlade-Menge: statt fixem Ziel-SoC wird nur so viel
+# nachgeladen, wie laut morgiger Verbrauchs-/PV-Prognose nötig ist
+# (low_slot_target_soc wirkt dann als Obergrenze).
+CONF_LOW_SLOT_FORECAST_BASED = "low_slot_forecast_based"           # bool
 
 # Phase C: generic tariff slot list (replaces the single HT-window).
 # Stored under entry options as a list of dicts:
@@ -253,6 +261,7 @@ PHASE_ASTRO_WAIT = "astro_wait"                  # Warten auf Sonne (Phase 7)
 PHASE_MORNING_CAP = "morning_cap"                # F0: Morning-SoC-Cap aktiv
 PHASE_HARD_SOC_LIMIT = "hard_soc_limit"          # G0: Fester Max-SoC-Deckel (Akku-Schonung)
 PHASE_FAST_FLOOR = "fast_floor"                  # Schnelllade-Boden: voller PV-Überschuss bis Floor-SoC
+PHASE_GRID_CHARGE = "grid_charge"                # aktive Netzladung im low-Slot (NT-Fenster)
 PHASE_FORCE_DISCHARGE = "force_discharge"        # manueller Schalter im Dashboard
 PHASE_IDLE = "idle"                              # kein Bedarf
 
@@ -285,6 +294,7 @@ ALL_PHASES = [
     PHASE_MORNING_CAP,
     PHASE_HARD_SOC_LIMIT,
     PHASE_FAST_FLOOR,
+    PHASE_GRID_CHARGE,
     PHASE_CORRIDOR,
     PHASE_PV_DELAY,
     PHASE_SPREADING,
@@ -309,6 +319,9 @@ DEFAULT_HT_MIN = 50
 DEFAULT_HT_SOCKEL = 10
 DEFAULT_CHEAP_THRESHOLD = 0.10
 DEFAULT_MAX_GRID_CHARGE_KWH = 3.0
+DEFAULT_LOW_SLOT_GRID_CHARGE_ENABLED = False
+DEFAULT_LOW_SLOT_TARGET_SOC = 60.0
+DEFAULT_LOW_SLOT_FORECAST_BASED = False
 DEFAULT_WALLBOX_MIN_CURRENT = 6
 DEFAULT_WALLBOX_MAX_CURRENT = 16
 DEFAULT_WALLBOX_PHASES = "3"  # SelectSelector erwartet str (options=["1","3"])

@@ -114,12 +114,15 @@
           "dynamic_tariff_enabled": "Dynamische Tarife aktivieren",
           "price_sensor": "Preis-Sensor (€/kWh)",
           "cheap_threshold": "Günstig-Schwelle (€/kWh)",
-          "max_grid_charge_kwh": "Max. Netzladung pro Tag (kWh)"
+          "max_grid_charge_kwh": "Max. Netzladung pro Tag (kWh)",
+          "low_slot_grid_charge_enabled": "Aktive Netzladung im low-Slot",
+          "low_slot_target_soc": "Netzlade-Ziel im low-Slot (% SoC)",
+          "low_slot_forecast_based": "Netzlade-Menge prognosebasiert"
         }
       },
       "tariff_slots": {
         "title": "Tarif-Slots",
-        "description": "Verwalte beliebig viele Tarif-Fenster (statt nur ein HT-Fenster).\n\nAktuell konfiguriert:\n{slots}\n\nKlassen: high = entladen sperren, low = Netzladung erlaubt, normal = neutral.",
+        "description": "Verwalte beliebig viele Tarif-Fenster (statt nur ein HT-Fenster).\n\nAktuell konfiguriert:\n{slots}\n\nKlassen: high = Akku deckt Haus bis zur Reserve, dann Entladesperre · low = günstiges Fenster (optional aktive Netzladung) · normal = neutral.",
         "data": {
           "action": "Aktion"
         }
@@ -402,7 +405,7 @@
           "min_reserve_soc": "Mindest-SoC-Reserve (%) – optional"
         },
         "data_description": {
-          "class_": "high = Entladen sperren, Netzladung verhindert · low = Netzladung bei günstigem Preis erlaubt · normal = neutral.",
+          "class_": "high = Akku deckt Haus bis zur Reserve, darunter Entladesperre · low = günstiges Fenster (optional aktive Netzladung) · normal = neutral.",
           "min_reserve_soc": "Maestro hält diesen SoC im Slot mindestens vor. Leer lassen für keine Reservepflicht."
         }
       },
@@ -418,13 +421,19 @@
           "dynamic_tariff_enabled": "Dynamische Tarife aktivieren",
           "price_sensor": "Preis-Sensor (€/kWh)",
           "cheap_threshold": "Günstig-Schwelle (€/kWh)",
-          "max_grid_charge_kwh": "Max. Netzladung pro Tag (kWh)"
+          "max_grid_charge_kwh": "Max. Netzladung pro Tag (kWh)",
+          "low_slot_grid_charge_enabled": "Aktive Netzladung im low-Slot",
+          "low_slot_target_soc": "Netzlade-Ziel im low-Slot (% SoC)",
+          "low_slot_forecast_based": "Netzlade-Menge prognosebasiert"
         },
         "data_description": {
           "battery_capex_eur": "Kaufpreis des Akkus in €. Wird für die Wear-Cost-Berechnung (Zellverschleiß pro kWh) genutzt.",
           "battery_total_cycles": "Lebensdauer-Vollzyklen laut Hersteller-Datenblatt (z. B. 6000 für LFP). Bestimmt die Wear-Cost pro Zyklus.",
           "cheap_threshold": "Liegt der Spotpreis darunter, erlaubt Maestro das Laden aus dem Netz (max. max_grid_charge_kwh pro Tag).",
-          "max_grid_charge_kwh": "Maximale Netzlade-Energie pro Kalendertag. Verhindert tägliches Vollladen aus dem Netz."
+          "max_grid_charge_kwh": "Maximale Netzlade-Energie pro Kalendertag. Verhindert tägliches Vollladen aus dem Netz.",
+          "low_slot_grid_charge_enabled": "Lädt in einem low-Slot aktiv aus dem Netz, bis der Ziel-SoC erreicht ist – unabhängig vom Tarif-Modus. Nützlich für klassische NT-Fenster, um die Zeit bis zur PV-Deckung zu überbrücken. Begrenzt durch das Tagesbudget oben.",
+          "low_slot_target_soc": "Ziel-SoC, bis zu dem im low-Slot aus dem Netz geladen wird. Bei prognosebasierter Menge wirkt dieser Wert als Obergrenze.",
+          "low_slot_forecast_based": "Statt fixem Ziel-SoC wird nur so viel nachgeladen, wie laut morgiger PV-/Verbrauchsprognose nötig ist (benötigt die Sensoren für Prognose morgen + Verbrauch morgen). Der Ziel-SoC oben ist dann die Obergrenze. Fehlen Prognosedaten, gilt der feste Ziel-SoC."
         }
       },
       "wallbox": {
@@ -570,6 +579,7 @@
           "morning_cap": "Morning-Cap (SoC-Deckel)",
           "hard_soc_limit": "Hard-SoC-Limit aktiv",
           "fast_floor": "Schnelllade-Boden",
+          "grid_charge": "Netzladung (günstiger Slot)",
           "idle": "Bereitschaft"
         }
       },
@@ -667,6 +677,9 @@
       },
       "emergency_charge_active": {
         "name": "Notfallladung aktiv"
+      },
+      "grid_charge_active": {
+        "name": "Netzladung aktiv (günstiger Slot)"
       },
       "curtailment_guard_active": {
         "name": "Abregelschutz aktiv"

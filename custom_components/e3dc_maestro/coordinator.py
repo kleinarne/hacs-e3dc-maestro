@@ -562,6 +562,7 @@ class E3DCMaestroCoordinator(
             regelung_aktiv=self.regelung_aktiv,
             curtailment_guard_active=self._curtailment_guard_active,
             current_price=current_price,
+            grid_charged_today_kwh=self.stats.get("grid_to_battery_today_kwh", 0.0),
             hp_running=hp_running,
             hp_last_change_minutes=hp_last_change_min,
             force_discharge=self.force_discharge,

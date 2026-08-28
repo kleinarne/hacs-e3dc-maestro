@@ -94,6 +94,14 @@ class MaestroParams:
     dynamic_tariff_enabled: bool = False
     cheap_threshold: float = 0.10
     max_grid_charge_kwh: float = 3.0
+    # Aktive Netzladung im low-Slot (NT-Fenster). Unabhängig vom tariff_mode:
+    # lädt AKTIV aus dem Netz bis low_slot_target_soc, begrenzt durch das
+    # Tagesbudget max_grid_charge_kwh.
+    low_slot_grid_charge_enabled: bool = False
+    low_slot_target_soc: float = 60.0
+    # Prognosebasiert: nur so viel nachladen, wie laut morgiger Prognose nötig
+    # (low_slot_target_soc wird dann zur Obergrenze).
+    low_slot_forecast_based: bool = False
     # Phase C: explicit tariff slot schedule (optional override).
     # If None, a schedule is derived from the legacy ht_*/cheap_threshold fields.
     tariff_schedule: TariffSchedule | None = None
@@ -454,6 +462,34 @@ def forward_looking_charge_target(
     cap = min(cap, 100.0)
 
     return max(base_target, min(base_target + extra_pct, cap))
+
+
+def low_slot_grid_charge_target(
+    state: MaestroState,
+    params: MaestroParams,
+) -> float:
+    """Ziel-SoC (%) für die aktive Netzladung im low-Slot.
+
+    Zwei Modi:
+      * Fest (Standard): gibt ``params.low_slot_target_soc`` zurück.
+      * Prognosebasiert (``low_slot_forecast_based``): lädt nur so viel, wie
+        laut morgiger Prognose nötig ist, um das PV-Defizit zu überbrücken.
+        Das Defizit (Verbrauch − PV) wird in SoC-Prozent umgerechnet und mit
+        ``low_slot_target_soc`` als **Obergrenze** gedeckelt. Fehlen
+        Prognosedaten, fällt die Funktion auf den festen Ziel-SoC zurück.
+    """
+    fixed_target = params.low_slot_target_soc
+    if not params.low_slot_forecast_based:
+        return fixed_target
+    if state.tomorrow_pv_kwh is None or state.tomorrow_consumption_kwh is None:
+        return fixed_target
+    if params.battery_capacity_kwh <= 0:
+        return fixed_target
+
+    deficit_kwh = max(0.0, state.tomorrow_consumption_kwh - state.tomorrow_pv_kwh)
+    needed_pct = deficit_kwh / params.battery_capacity_kwh * 100.0
+    # Nur so viel wie nötig, aber nie mehr als die konfigurierte Obergrenze.
+    return max(0.0, min(fixed_target, needed_pct))
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -908,6 +944,7 @@ def decide(
         PHASE_RESERVE_PROTECTION,
         PHASE_SPREADING,
         PHASE_FAST_FLOOR,
+        PHASE_GRID_CHARGE,
         POWER_MODE_CHARGE,
         POWER_MODE_DISCHARGE,
         POWER_MODE_IDLE,
@@ -1226,6 +1263,40 @@ def decide(
                 target_soc=target,
                 target_charge_power=params.max_charge_power,
             )
+
+    # ── 6.97 Aktive Netzladung im low-Slot (NT-Fenster) ──────────────────
+    # Anders als der passive TARIFF_LOW-Bypass in _apply_house_ceiling (der nur
+    # das PV-Ceiling aufhebt) lädt diese Phase AKTIV aus dem Netz, um ein
+    # günstiges Fenster zu nutzen und die Zeit bis zur PV-Deckung zu
+    # überbrücken. Unabhängig vom tariff_mode, weil hier ein bewusster
+    # Nutzerwunsch vorliegt. Das Tagesbudget max_grid_charge_kwh begrenzt die
+    # aus dem Netz geladene Energie; Curtailment-Guard hat weiterhin Vorrang.
+    if (
+        params.low_slot_grid_charge_enabled
+        and tariff_class == TARIFF_LOW
+        and not curtailment_guard_active
+    ):
+        gc_target = low_slot_grid_charge_target(state, params)
+        if state.soc < gc_target:
+            budget_left_kwh = params.max_grid_charge_kwh - grid_charged_today_kwh
+            if budget_left_kwh > 0:
+                target_src = (
+                    "prognosebasiert"
+                    if params.low_slot_forecast_based
+                    else "fest"
+                )
+                return MaestroDecision(
+                    phase=PHASE_GRID_CHARGE,
+                    reason=(
+                        f"Netzladung im günstigen Slot: SoC {state.soc:.0f}% < "
+                        f"Ziel {gc_target:.0f}% ({target_src}), "
+                        f"Restbudget {budget_left_kwh:.1f} kWh"
+                    ),
+                    power_mode=POWER_MODE_CHARGE,
+                    charge_power_limit=params.max_charge_power,
+                    target_soc=gc_target,
+                    target_charge_power=params.max_charge_power,
+                )
 
     charge_power = desired_charge_power(state.soc, target, params, now)
     if charge_power > 0 and state.soc < params.charge_target:
