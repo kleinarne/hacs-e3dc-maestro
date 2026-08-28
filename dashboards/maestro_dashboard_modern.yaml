@@ -662,6 +662,20 @@ views:
           - type: conditional
             conditions:
               - condition: state
+                entity: binary_sensor.e3dc_maestro_netzladung_aktiv
+                state: "on"
+            card:
+              type: custom:button-card
+              template: status_chip
+              entity: binary_sensor.e3dc_maestro_netzladung_aktiv
+              name: Netzladung
+              icon: mdi:transmission-tower-import
+              styles:
+                icon: [color: "#3949ab"]
+
+          - type: conditional
+            conditions:
+              - condition: state
                 entity: binary_sensor.e3dc_maestro_schwacher_pv_tag
                 state: "on"
             card:
@@ -717,7 +731,7 @@ views:
                 value: |
                   [[[
                     return ['notfallladung_aktiv','abregelschutz_aktiv','einspeisedrosselung_aktiv',
-                            'ht_schutz_aktiv','schwacher_pv_tag','ladesperre_aktiv','entladesperre_aktiv']
+                            'ht_schutz_aktiv','netzladung_aktiv','schwacher_pv_tag','ladesperre_aktiv','entladesperre_aktiv']
                       .some(k => states['binary_sensor.e3dc_maestro_' + k] &&
                                   states['binary_sensor.e3dc_maestro_' + k].state === 'on');
                   ]]]
@@ -2862,11 +2876,12 @@ views:
               | 10 | **astro_wait** | Warten auf Sonnenaufgang + Offset (kein Laden) |
               | 11 | **hard_soc_limit** | Harter Max-SoC-Deckel (Akku-Schonung) |
               | 12 | **fast_floor** | Schnelllade-Boden: voller PV-Überschuss bis Floor-SoC |
-              | 13 | **pv_delay** | Gute PV-Prognose → Korridor-Ladung verzögert |
-              | 14 | **corridor** | Saisonaler Ladekorridor / Schwacher-PV-Tag-Überschuss |
-              | 15 | **spreading** | Ladeverteilung über Restzeit bis Ladeende |
-              | 16 | **curtailment_guard** | Abregelschutz – Mindestladung gegen PV-Verlust |
-              | 17 | **idle** | Kein Ladebedarf / Korridor-Pause / außerhalb Fenster |
+              | 13 | **grid_charge** | Aktive Netzladung im `low`-Slot bis Ziel-SoC (NT-Fenster) |
+              | 14 | **pv_delay** | Gute PV-Prognose → Korridor-Ladung verzögert |
+              | 15 | **corridor** | Saisonaler Ladekorridor / Schwacher-PV-Tag-Überschuss |
+              | 16 | **spreading** | Ladeverteilung über Restzeit bis Ladeende |
+              | 17 | **curtailment_guard** | Abregelschutz – Mindestladung gegen PV-Verlust |
+              | 18 | **idle** | Kein Ladebedarf / Korridor-Pause / außerhalb Fenster |
 
               Hinweis: Die Entity-Option `manual` existiert nur als Anzeige-Label
               und wird von der Engine derzeit nicht gesetzt.

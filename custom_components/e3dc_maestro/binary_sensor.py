@@ -60,7 +60,7 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[MaestroBinarySensorDescription, ...] = (
     ),
     MaestroBinarySensorDescription(
         key="grid_charge_active",
-        name="Netzladung aktiv (günstiger Slot)",
+        name="Netzladung aktiv",
         icon="mdi:transmission-tower-import",
         device_class=BinarySensorDeviceClass.RUNNING,
         value_fn=lambda coord: coord.last_phase == PHASE_GRID_CHARGE,

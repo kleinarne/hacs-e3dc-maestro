@@ -152,6 +152,7 @@ views:
           {% elif p == 'spreading' %} teal
           {% elif p == 'curtailment_guard' %} amber
           {% elif p == 'ht_protection' %} deep-orange
+          {% elif p == 'grid_charge' %} indigo
           {% elif p == 'reserve_protection' %} blue
           {% elif p == 'evcc_pause' %} purple
           {% elif p == 'pv_delay' %} light-green
@@ -602,6 +603,7 @@ views:
                 'corridor': 'Lade-Korridor',
                 'spreading': 'Spreading',
                 'predischarge': 'Vorentladung',
+                'grid_charge': 'Netzladung (günstig)',
                 'hold': 'Halten',
                 'idle': 'Leerlauf',
                 'normal': 'Normalbetrieb'
@@ -1370,6 +1372,13 @@ views:
             entity: binary_sensor.e3dc_maestro_ht_schutz_aktiv
             tap_action:
               action: more-info
+          - type: template
+            content: Netzladung
+            icon: mdi:transmission-tower-import
+            icon_color: "{{ 'indigo' if is_state('binary_sensor.e3dc_maestro_netzladung_aktiv', 'on') else 'grey' }}"
+            entity: binary_sensor.e3dc_maestro_netzladung_aktiv
+            tap_action:
+              action: more-info
 
       - type: entities
         title: Hochtarif-Schutz
@@ -1420,6 +1429,10 @@ views:
             name: HT-Schutz aktiv (Legacy-Schnellzugriff)
           - entity: binary_sensor.e3dc_maestro_ht_schutz_aktiv
             name: HT-Schutz aktuell aktiv
+          - entity: binary_sensor.e3dc_maestro_netzladung_aktiv
+            name: Netzladung im low-Slot aktiv
+          - entity: number.e3dc_maestro_max_netzladung_tag
+            name: "Max. Netzladung/Tag (kWh)"
           - type: button
             name: "ℹ️  Hilfe zu diesem Abschnitt"
             icon: mdi:help-circle-outline
@@ -1432,7 +1445,9 @@ views:
           **Tarif-Slots konfigurieren:** Über *Einstellungen → Integrationen →
           E3DC Maestro → Konfigurieren → Tarif-Slots* lassen sich beliebig viele
           Fenster (Wochentage, Uhrzeit, Klasse) anlegen.
-          Klassen: `high` = Entladung nur bis zur Reserve (HT-Schutz), `low` = Netzladung erlaubt, `normal` = neutral.
+          Klassen: `high` = Akku deckt Haus bis zur Reserve, darunter Entladesperre,
+          `low` = günstiges Fenster (optional aktive Netzladung bis Ziel-SoC), `normal` = neutral.
+          Die aktive Netzladung im `low`-Slot wird im Options Flow unter *Tarif & Kosten* aktiviert.
 
   - title: Flexibilität
     icon: mdi:home-lightning-bolt
@@ -1813,11 +1828,12 @@ views:
           | 10 | **astro_wait** | Warten auf Sonnenaufgang + Offset (kein Laden) |
           | 11 | **hard_soc_limit** | Harter Max-SoC-Deckel (Akku-Schonung) |
           | 12 | **fast_floor** | Schnelllade-Boden: voller PV-Überschuss bis Floor-SoC |
-          | 13 | **pv_delay** | Gute PV-Prognose → Korridor-Ladung verzögert |
-          | 14 | **corridor** | Saisonaler Ladekorridor / Schwacher-PV-Tag-Überschuss |
-          | 15 | **spreading** | Ladeverteilung über Restzeit bis Ladeende |
-          | 16 | **curtailment_guard** | Abregelschutz – Mindestladung gegen PV-Verlust |
-          | 17 | **idle** | Kein Ladebedarf / Korridor-Pause / außerhalb Fenster |
+          | 13 | **grid_charge** | Aktive Netzladung im `low`-Slot bis Ziel-SoC (NT-Fenster) |
+          | 14 | **pv_delay** | Gute PV-Prognose → Korridor-Ladung verzögert |
+          | 15 | **corridor** | Saisonaler Ladekorridor / Schwacher-PV-Tag-Überschuss |
+          | 16 | **spreading** | Ladeverteilung über Restzeit bis Ladeende |
+          | 17 | **curtailment_guard** | Abregelschutz – Mindestladung gegen PV-Verlust |
+          | 18 | **idle** | Kein Ladebedarf / Korridor-Pause / außerhalb Fenster |
 
           Hinweis: Die Entity-Option `manual` existiert nur als Anzeige-Label und
           wird von der Engine derzeit nicht gesetzt.

@@ -679,7 +679,7 @@
         "name": "Notfallladung aktiv"
       },
       "grid_charge_active": {
-        "name": "Netzladung aktiv (günstiger Slot)"
+        "name": "Netzladung aktiv"
       },
       "curtailment_guard_active": {
         "name": "Abregelschutz aktiv"

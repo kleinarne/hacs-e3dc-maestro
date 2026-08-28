@@ -32,7 +32,11 @@ NT-Verträge, um die Zeit bis zur PV-Deckung zu überbrücken.
   morgiger PV-/Verbrauchsprognose nötig ist (Defizit = Verbrauch − PV), statt
   stur bis zum festen Ziel-SoC. Der Ziel-SoC wirkt dann als Obergrenze; ohne
   Prognosedaten gilt weiterhin der feste Ziel-SoC.
-- Neuer Binärsensor **Netzladung aktiv (günstiger Slot)** (`grid_charge_active`).
+- Neuer Binärsensor **Netzladung aktiv** (`binary_sensor.e3dc_maestro_netzladung_aktiv`).
+- **Dashboard:** Neue Phase `grid_charge` in Classic- und Modern-Dashboard
+  (Status-Chip „Netzladung", Phasen-Label/Farbe, Glossar) sowie im Tarif-Slots-
+  Block. Community-Dashboard nach dem Update einmal neu anlegen, damit die
+  Kacheln erscheinen.
 
 ### Doku
 - Tarif-Slot-Beschreibung korrigiert: `low` ist ein günstiges Fenster mit
