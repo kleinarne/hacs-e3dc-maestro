@@ -769,6 +769,12 @@ Das Dashboard erscheint in der Sidebar. Änderungen an Maestro-Releases aktualis
 die Strategy-Vorlage; ein bereits angelegtes Storage-Dashboard bleibt unverändert,
 bis du es löschst und neu anlegst.
 
+Wenn **Timeout waiting for strategy element ll-strategy-dashboard-e3dc-maestro**
+erscheint: Home Assistant neu starten und den Browser hart neu laden. Danach unter
+**Einstellungen → Dashboards → Ressourcen** (erweiterter Modus)
+`/e3dc_maestro/frontend/e3dc-maestro-strategy.js` als JavaScript-Modul prüfen.
+Im Lovelace-YAML-Modus muss dieser Eintrag manuell gesetzt werden.
+
 ### Fallback: Manueller YAML-Import
 
 Falls der Community-Picker fehlt (ältere HA-Version) oder du YAML bevorzugst:

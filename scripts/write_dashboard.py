@@ -2591,7 +2591,8 @@ weitere Ladung initiiert – der Akku bleibt für die Nacht-zu-Morgen-Phase
 **Typisches Szenario:** Nachts laden auf Mindest-SoC (z.B. Notstromreserve),
 aber nicht auf 80 %. Dann morgens mit PV den Rest laden.
 
-**Ausnahmen:** Curtailment Guard (Abregelschutz) überschreibt den Morning-Cap
+**Ausnahmen:** Curtailment Guard (Abregelschutz) und Akku-Priorität
+(Schwacher-PV-Tag / unzureichende Restprognose) überschreiben den Morning-Cap
 immer, damit keine Energie verloren geht.
 
 ---

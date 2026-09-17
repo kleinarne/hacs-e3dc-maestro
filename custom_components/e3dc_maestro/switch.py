@@ -33,6 +33,7 @@ from .const import (
     CONF_PV_FORECAST_ENABLED,
     CONF_SEASONAL_RESERVE_ENABLED,
     CONF_TWO_TIER_ENABLED,
+    CONF_WALLBOX_DISCHARGE_GUARD_ENABLED,
     CONF_WALLBOX_ENABLED,
     DOMAIN,
 )
@@ -93,6 +94,15 @@ SWITCH_DESCRIPTIONS: tuple[MaestroSwitchDescription, ...] = (
         param_key=CONF_WALLBOX_ENABLED,
         on_fn=lambda coord: coord.update_param(CONF_WALLBOX_ENABLED, True),
         off_fn=lambda coord: coord.update_param(CONF_WALLBOX_ENABLED, False),
+    ),
+    # Wallbox-Netzschutz: Entladung offen halten → kein Netzbezug beim Auto-Laden
+    MaestroSwitchDescription(
+        key=CONF_WALLBOX_DISCHARGE_GUARD_ENABLED,
+        name="Wallbox-Netzschutz",
+        icon="mdi:transmission-tower-off",
+        param_key=CONF_WALLBOX_DISCHARGE_GUARD_ENABLED,
+        on_fn=lambda coord: coord.update_param(CONF_WALLBOX_DISCHARGE_GUARD_ENABLED, True),
+        off_fn=lambda coord: coord.update_param(CONF_WALLBOX_DISCHARGE_GUARD_ENABLED, False),
     ),
     MaestroSwitchDescription(
         key=CONF_HP_ENABLED,

@@ -107,6 +107,12 @@ CONF_WALLBOX_MIN_CURRENT = "wallbox_min_current"      # A
 CONF_WALLBOX_MAX_CURRENT = "wallbox_max_current"      # A
 CONF_WALLBOX_PHASES = "wallbox_phases"                # 1 or 3
 CONF_WALLBOX_MIN_SURPLUS = "wallbox_min_surplus"      # W
+# Wallbox-Netzschutz: oberstes Ziel = kein Netzbezug, während eine Wallbox lädt
+# (z. B. openWB PV-Laden). Die Akku-Entladung bleibt voll freigegeben, damit
+# Defizite aus dem Hausakku gedeckt werden – nicht aus dem Netz. Der Akku darf
+# das Auto dabei mitversorgen; Netzbezug vermeiden hat Vorrang vor Akkuschutz.
+CONF_WALLBOX_DISCHARGE_GUARD_ENABLED = "wallbox_discharge_guard_enabled"      # bool
+CONF_WALLBOX_DISCHARGE_GUARD_THRESHOLD_W = "wallbox_discharge_guard_threshold_w"  # W
 
 # Wallbox power source (separater Verbrauchszähler)
 # Trennt EV-Ladeverbrauch vom Hausverbrauch, damit Optimizer/EWMA/Forecast
@@ -326,6 +332,11 @@ DEFAULT_WALLBOX_MIN_CURRENT = 6
 DEFAULT_WALLBOX_MAX_CURRENT = 16
 DEFAULT_WALLBOX_PHASES = "3"  # SelectSelector erwartet str (options=["1","3"])
 DEFAULT_WALLBOX_MIN_SURPLUS = 1400
+# Wallbox-Netzschutz standardmäßig aktiv: hält die Entladung offen, solange das
+# Auto lädt → Defizit aus dem Akku statt aus dem Netz. Trigger-Schwelle =
+# Ladeleistung, ab der ein Auto als "aktiv ladend" gilt.
+DEFAULT_WALLBOX_DISCHARGE_GUARD_ENABLED = True
+DEFAULT_WALLBOX_DISCHARGE_GUARD_THRESHOLD_W = 1000
 DEFAULT_HP_MIN_SURPLUS = 2000
 DEFAULT_HP_MAX_PRICE = 0.15
 DEFAULT_HP_MIN_RUN_MINUTES = 20

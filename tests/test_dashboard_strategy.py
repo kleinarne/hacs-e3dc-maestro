@@ -44,6 +44,8 @@ def test_dashboard_frontend_module_and_assets() -> None:
     assert 'DOMAIN, VERSION' in module or "from .const import DOMAIN, VERSION" in module
     assert "async_register_static_paths" in module
     assert "add_extra_js_url" in module
+    assert "async_create_item" in module
+    assert "ResourceStorageCollection" in module
     assert '/{DOMAIN}/frontend' in module or 'f"/{DOMAIN}/frontend"' in module
     assert STRATEGY_JS.is_file()
     assert STRATEGY_JSON.is_file()
@@ -59,4 +61,5 @@ def test_dashboard_frontend_module_and_assets() -> None:
     )
     assert "frontend" in manifest["dependencies"]
     assert "http" in manifest["dependencies"]
+    assert "lovelace" in manifest["dependencies"]
     assert "lovelace" in manifest["after_dependencies"]

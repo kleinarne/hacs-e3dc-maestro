@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, time
 from typing import Any
 
@@ -130,6 +130,12 @@ class MaestroParams:
     wallbox_max_current: float = 16
     wallbox_phases: int = 3
     wallbox_min_surplus: float = 1400
+    # Wallbox-Netzschutz: hält die Akku-Entladung offen, solange eine Wallbox
+    # aktiv lädt (wallbox_power > threshold). Oberstes Ziel: kein Netzbezug –
+    # Defizite werden aus dem Hausakku gedeckt (auch wenn der Akku das Auto
+    # mitversorgt). Provider-agnostisch, rein leistungsbasierter Trigger.
+    wallbox_discharge_guard_enabled: bool = True
+    wallbox_discharge_guard_threshold_w: float = 1000.0
     # Heat pump
     hp_enabled: bool = False
     hp_min_surplus: float = 2000
@@ -971,7 +977,110 @@ def _morning_discharge_decision(
 # Main decision function
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _apply_wallbox_discharge_guard(
+    decision: MaestroDecision,
+    state: MaestroState,
+    params: MaestroParams,
+) -> MaestroDecision:
+    """Keep battery discharge open while a car is charging – avoid grid import.
+
+    Priority: **no grid import**. While the wallbox draws more than
+    ``wallbox_discharge_guard_threshold_w``, Maestro forces the discharge limit
+    up to ``max_charge_power`` so the home battery can cover any deficit of
+    house + car. The battery may feed the car; that is preferred over buying
+    grid power.
+
+    Exempt phases keep winning (off, emergency, feed-in, curtailment, reserve,
+    EVCC now-pause, forced/morning discharge) because those intentionally
+    constrain charge/discharge for safety or explicit user intent.
+    """
+    from .const import (
+        PHASE_CURTAILMENT_GUARD,
+        PHASE_EMERGENCY,
+        PHASE_EVCC_PAUSE,
+        PHASE_FEED_IN_LIMIT,
+        PHASE_FORCE_DISCHARGE,
+        PHASE_MORNING_DISCHARGE,
+        PHASE_OFF,
+        PHASE_RESERVE_PROTECTION,
+    )
+
+    if not params.wallbox_discharge_guard_enabled:
+        return decision
+    if state.wallbox_power <= params.wallbox_discharge_guard_threshold_w:
+        return decision
+
+    _exempt = {
+        PHASE_OFF,
+        PHASE_EMERGENCY,
+        PHASE_FEED_IN_LIMIT,
+        PHASE_CURTAILMENT_GUARD,
+        PHASE_RESERVE_PROTECTION,
+        PHASE_EVCC_PAUSE,
+        PHASE_FORCE_DISCHARGE,
+        PHASE_MORNING_DISCHARGE,
+    }
+    if decision.phase in _exempt:
+        return decision
+
+    # Voll freigeben: Akku darf Haus + Auto decken → kein Netzbezug.
+    open_w = max(0.0, float(params.max_charge_power))
+    if decision.discharge_power_limit is not None and decision.discharge_power_limit >= open_w:
+        return decision
+
+    return replace(
+        decision,
+        discharge_power_limit=open_w,
+        reason=(
+            decision.reason
+            + f" | Wallbox-Netzschutz: Entladung frei ({open_w:.0f} W) "
+            + f"(Auto lädt {state.wallbox_power:.0f} W → kein Netzbezug)"
+        ),
+    )
+
+
 def decide(
+    state: MaestroState,
+    params: MaestroParams,
+    now: datetime,
+    *,
+    regelung_aktiv: bool = True,
+    curtailment_guard_active: bool = False,
+    current_price: float | None = None,
+    grid_charged_today_kwh: float = 0.0,
+    hp_running: bool = False,
+    hp_last_change_minutes: float = 999,
+    force_discharge: bool = False,
+    previous_phase: str | None = None,
+    previous_phase_since: datetime | None = None,
+    previous_battery_priority: bool = False,
+) -> MaestroDecision:
+    """Public entry point: run the decision cascade + post-process guards.
+
+    The core cascade (:func:`_decide_core`) is unchanged; afterwards the
+    Wallbox grid-avoidance guard may open the returned ``discharge_power_limit``
+    so the home battery covers EV load instead of drawing from the grid (see
+    :func:`_apply_wallbox_discharge_guard`).
+    """
+    decision = _decide_core(
+        state,
+        params,
+        now,
+        regelung_aktiv=regelung_aktiv,
+        curtailment_guard_active=curtailment_guard_active,
+        current_price=current_price,
+        grid_charged_today_kwh=grid_charged_today_kwh,
+        hp_running=hp_running,
+        hp_last_change_minutes=hp_last_change_minutes,
+        force_discharge=force_discharge,
+        previous_phase=previous_phase,
+        previous_phase_since=previous_phase_since,
+        previous_battery_priority=previous_battery_priority,
+    )
+    return _apply_wallbox_discharge_guard(decision, state, params)
+
+
+def _decide_core(
     state: MaestroState,
     params: MaestroParams,
     now: datetime,
@@ -1250,7 +1359,14 @@ def decide(
     # would hand control back to E3DC and the device would charge to 100% on its own,
     # ignoring the cap. Convention: POWER_MODE_NORMAL + charge_power_limit=1 W blocks
     # charging while leaving discharge free, so the battery still covers the house load.
-    if params.morning_cap_enabled and not curtailment_guard_active:
+    # Yields to Curtailment Guard and to Akku-Priorität (Schwacher-PV-Tag / unzureichende
+    # Restprognose): on weak-PV mornings the cap would otherwise export surplus while
+    # the battery stays capped — the exact failure mode the priority path exists for.
+    if (
+        params.morning_cap_enabled
+        and not curtailment_guard_active
+        and not _battery_priority
+    ):
         hour_now = now.hour + now.minute / 60
         if hour_now < params.morning_cap_until_h and state.soc >= params.morning_cap_soc:
             return MaestroDecision(

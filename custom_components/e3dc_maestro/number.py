@@ -50,6 +50,7 @@ from .const import (
     CONF_WALLBOX_MAX_CURRENT,
     CONF_WALLBOX_MIN_CURRENT,
     CONF_WALLBOX_MIN_SURPLUS,
+    CONF_WALLBOX_DISCHARGE_GUARD_THRESHOLD_W,
     CONF_WATCHDOG_TIMEOUT,
     CONF_WINTER_MINIMUM_HOUR,
     CONF_MORNING_UNLOAD_SOC,
@@ -280,6 +281,15 @@ NUMBER_DESCRIPTIONS: tuple[MaestroNumberDescription, ...] = (
         device_class=NumberDeviceClass.POWER,
         param_key=CONF_WALLBOX_MIN_SURPLUS,
         min_value=0, max_value=10000, step_value=100,
+    ),
+    MaestroNumberDescription(
+        key=CONF_WALLBOX_DISCHARGE_GUARD_THRESHOLD_W,
+        name="Wallbox-Netzschutz Schwelle",
+        icon="mdi:transmission-tower-off",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        device_class=NumberDeviceClass.POWER,
+        param_key=CONF_WALLBOX_DISCHARGE_GUARD_THRESHOLD_W,
+        min_value=0, max_value=11000, step_value=100,
     ),
     # ── Heat pump ─────────────────────────────────────────────────────────
     MaestroNumberDescription(

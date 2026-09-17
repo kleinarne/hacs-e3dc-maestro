@@ -11,6 +11,35 @@ einen eigenen Versionsabschnitt verschieben.
 
 ---
 
+## [0.3.18] – Morning-Cap weicht Akku-Priorität; Dashboard-Strategy; Wallbox-Netzschutz (2026-09-17)
+
+### Behoben
+- **Morning-Cap vs. Schwacher-PV-Tag:** An Tagen mit Akku-Priorität (schwache
+  Tagesprognose bzw. unzureichende Restprognose) blockierte der Morning-Cap das
+  Laden trotzdem (1 W-Limit), obwohl das Dashboard bereits „Akku-Ladung
+  priorisiert“ anzeigte. Folge: Vormittags-Überschuss ging ins Netz, der Akku
+  blieb niedrig und konnte nachmittags bei Bewölkung nicht mehr voll werden.
+  Morning-Cap weicht jetzt der Akku-Priorität – analog zum Abregelschutz.
+- **Timeout beim Öffnen des Community-Dashboards:** Lovelace wartet nur 5 Sekunden
+  auf `ll-strategy-dashboard-e3dc-maestro`. Das Strategy-Modul wurde bisher nur
+  als Extra-JS im Frontend-HTML geladen – bei gecachtem Frontend oft zu spät oder
+  gar nicht. Es wird jetzt zusätzlich als Lovelace-Dashboard-Resource
+  (JavaScript-Modul) registriert.
+
+### Neu
+- **Wallbox-Netzschutz:** Solange die Wallbox über der Schwelle lädt, hält Maestro
+  die Akku-Entladung offen (kein künstliches Entlade-Limit), damit Defizite aus
+  dem Hausakku gedeckt werden statt aus dem Netz. Schalter + Schwellenwert als
+  Entities.
+
+### Nach dem Update
+HA neu starten, danach Browser hart neu laden (Cmd/Ctrl+Shift+R). Unter
+Einstellungen → Dashboards → Ressourcen sollte
+`/e3dc_maestro/frontend/e3dc-maestro-strategy.js` als JavaScript-Modul stehen.
+Bei Lovelace im YAML-Modus den Eintrag dort manuell ergänzen (`type: module`).
+
+---
+
 ## [0.3.17] – Dashboard: Akku-Priorität korrekt vom Ganztags-Flag getrennt (2026-08-28)
 
 ### Behoben

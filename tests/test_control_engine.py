@@ -37,6 +37,7 @@ from custom_components.e3dc_maestro.const import (
     PHASE_MORNING_CAP,
     PHASE_HARD_SOC_LIMIT,
     PHASE_MORNING_DISCHARGE,
+    PHASE_FORCE_DISCHARGE,
     PHASE_ASTRO_WAIT,
     PHASE_OFF,
     PHASE_RESERVE_PROTECTION,
@@ -893,6 +894,97 @@ class TestEvccPause:
         )
         decision = decide(state, p, _now(6, 15, 10))
         assert decision.phase == PHASE_EMERGENCY
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Wallbox-Netzschutz: kein Netzbezug – Akku darf Auto mitversorgen
+# ──────────────────────────────────────────────────────────────────────────────
+
+class TestWallboxDischargeGuard:
+    def _guard_params(self, **kwargs) -> MaestroParams:
+        base = {
+            **DEFAULT_PARAMS.__dict__,
+            "ht_enabled": False,
+            "spreading_enabled": False,
+            "seasonal_reserve_enabled": False,
+            "wallbox_discharge_guard_enabled": True,
+            "wallbox_discharge_guard_threshold_w": 1000.0,
+            "max_charge_power": 3000,
+        }
+        base.update(kwargs)
+        return MaestroParams(**base)
+
+    def test_opens_discharge_while_car_charges(self):
+        """IDLE: Entladung wird auf max freigegeben, damit kein Netzbezug entsteht."""
+        p = self._guard_params()
+        state = MaestroState(
+            soc=90, pv_power=0, house_power=600, grid_power=0, battery_power=-600,
+            wallbox_power=4000,
+        )
+        decision = decide(state, p, _now(6, 15, 10))
+        assert decision.phase == PHASE_IDLE
+        assert decision.discharge_power_limit == 3000
+        assert "Wallbox-Netzschutz" in decision.reason
+
+    def test_inactive_below_threshold(self):
+        p = self._guard_params()
+        state = MaestroState(
+            soc=90, pv_power=0, house_power=600, grid_power=0, battery_power=-600,
+            wallbox_power=500,  # < 1000 W Schwelle → kein aktives Laden
+        )
+        decision = decide(state, p, _now(6, 15, 10))
+        assert decision.discharge_power_limit is None
+        assert "Wallbox-Netzschutz" not in decision.reason
+
+    def test_inactive_when_disabled(self):
+        p = self._guard_params(wallbox_discharge_guard_enabled=False)
+        state = MaestroState(
+            soc=90, pv_power=0, house_power=600, grid_power=0, battery_power=-600,
+            wallbox_power=4000,
+        )
+        decision = decide(state, p, _now(6, 15, 10))
+        assert decision.discharge_power_limit is None
+
+    def test_raises_existing_low_discharge_cap(self):
+        """Wenn die Kaskade eine niedrige Entladegrenze setzt, hebt der Netzschutz an."""
+        p = self._guard_params()
+        # HT aus, SoC unter Ziel → idle mit charge block; guard opens discharge.
+        state = MaestroState(
+            soc=90, pv_power=500, house_power=2000, grid_power=0, battery_power=-1500,
+            wallbox_power=4000,
+        )
+        decision = decide(state, p, _now(6, 15, 10))
+        assert decision.discharge_power_limit == p.max_charge_power
+
+    def test_emergency_is_exempt(self):
+        p = self._guard_params()
+        state = MaestroState(
+            soc=5, pv_power=0, house_power=600, grid_power=0, battery_power=-600,
+            wallbox_power=4000,
+        )
+        decision = decide(state, p, _now(6, 15, 10))
+        assert decision.phase == PHASE_EMERGENCY
+        assert "Wallbox-Netzschutz" not in decision.reason
+
+    def test_feed_in_limit_is_exempt(self):
+        p = self._guard_params()
+        state = MaestroState(
+            soc=60, pv_power=10000, house_power=1000, grid_power=8000, battery_power=0,
+            wallbox_power=4000,
+        )
+        decision = decide(state, p, _now(7, 15, 13))
+        assert decision.phase == PHASE_FEED_IN_LIMIT
+        assert "Wallbox-Netzschutz" not in decision.reason
+
+    def test_force_discharge_is_exempt(self):
+        p = self._guard_params()
+        state = MaestroState(
+            soc=80, pv_power=0, house_power=600, grid_power=0, battery_power=-600,
+            wallbox_power=4000,
+        )
+        decision = decide(state, p, _now(6, 15, 10), force_discharge=True)
+        assert decision.phase == PHASE_FORCE_DISCHARGE
+        assert "Wallbox-Netzschutz" not in decision.reason
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -2324,6 +2416,73 @@ class TestMorningCap:
         result = decide(state, _F0_BASE, now, regelung_aktiv=True, curtailment_guard_active=True)
         # Curtailment guard should win, not morning cap
         assert result.phase != PHASE_MORNING_CAP
+
+    def test_battery_priority_overrides_morning_cap(self):
+        """Schwacher-PV-Tag / Akku-Priorität bypasses Morning-Cap so surplus can charge."""
+        params = MaestroParams(
+            inverter_power=12000,
+            max_charge_power=5000,
+            min_charge_power=300,
+            installed_kwp=20.0,
+            feed_in_limit_percent=70.0,
+            charge_threshold=15.0,
+            charge_target=100.0,
+            battery_capacity_kwh=20.0,
+            morning_cap_enabled=True,
+            morning_cap_soc=30.0,
+            morning_cap_until_h=9.0,
+            low_yield_priority_enabled=True,
+            low_yield_threshold=0.5,
+            low_yield_reference_kwh_per_kwp=5.5,
+            spreading_enabled=True,
+            ht_enabled=False,
+        )
+        # 41.7 / 110 ≈ 0.38 ≤ 0.5 → low-yield day; SoC above morning cap; PV surplus present.
+        state = MaestroState(
+            soc=40.0,
+            pv_power=3000,
+            house_power=600,
+            grid_power=-2000,
+            battery_power=0,
+            pv_forecast_today_kwh=41.7,
+        )
+        result = decide(state, params, _now(6, 1, 7, 0), regelung_aktiv=True)
+        assert result.phase != PHASE_MORNING_CAP
+        assert result.phase == PHASE_CORRIDOR
+        assert result.battery_priority is True
+        assert result.charge_power_limit == 5000
+
+    def test_sunny_day_keeps_morning_cap(self):
+        """High PV forecast → no battery priority → Morning-Cap still blocks."""
+        params = MaestroParams(
+            inverter_power=12000,
+            max_charge_power=5000,
+            min_charge_power=300,
+            installed_kwp=20.0,
+            feed_in_limit_percent=70.0,
+            charge_threshold=15.0,
+            charge_target=100.0,
+            battery_capacity_kwh=20.0,
+            morning_cap_enabled=True,
+            morning_cap_soc=30.0,
+            morning_cap_until_h=9.0,
+            low_yield_priority_enabled=True,
+            low_yield_threshold=0.5,
+            low_yield_reference_kwh_per_kwp=5.5,
+            spreading_enabled=True,
+            ht_enabled=False,
+        )
+        state = MaestroState(
+            soc=40.0,
+            pv_power=3000,
+            house_power=600,
+            grid_power=-2000,
+            battery_power=0,
+            pv_forecast_today_kwh=90.0,  # 90/110 ≈ 0.82 > 0.5
+        )
+        result = decide(state, params, _now(6, 1, 7, 0), regelung_aktiv=True)
+        assert result.phase == PHASE_MORNING_CAP
+        assert result.charge_power_limit == 1
 
     def test_disabled_cap_does_not_block(self):
         """morning_cap_enabled=False → step is skipped entirely."""

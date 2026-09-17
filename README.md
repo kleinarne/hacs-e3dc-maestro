@@ -722,6 +722,12 @@ The dashboard appears in the sidebar. Integration updates refresh the strategy
 template; an already created storage dashboard stays as-is until you delete and
 re-add it.
 
+If you see **Timeout waiting for strategy element ll-strategy-dashboard-e3dc-maestro**,
+restart Home Assistant and hard-reload the browser. Then check
+**Settings → Dashboards → Resources** (Advanced Mode) for
+`/e3dc_maestro/frontend/e3dc-maestro-strategy.js` as a JavaScript module.
+YAML-mode Lovelace cannot auto-register that resource — add it yourself.
+
 ### Fallback: Manual YAML import
 
 If the community picker is missing (older HA) or you prefer YAML:
