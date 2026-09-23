@@ -11,6 +11,24 @@ einen eigenen Versionsabschnitt verschieben.
 
 ---
 
+## [0.3.19] – Morning-Cap weicht auch am gelatchten schwachen PV-Tag (2026-09-23)
+
+### Behoben
+- **Morning-Cap vs. schwacher PV-Tag (Restlücke):** In v0.3.18 weicht der
+  Morning-Cap der *aktuellen* Akku-Priorität. Die Priorität wird aber
+  freigegeben, sobald die Restprognose den Bedarf rechnerisch deckt – typisch
+  an Tagen mit sonnigem Vormittag und bewölktem Nachmittag. Dann blockiert der
+  Cap wieder (1 W), der Vormittags-Überschuss geht ins Netz, und der Akku wird
+  nachmittags nicht mehr voll. Morning-Cap weicht jetzt am **gelatchten**
+  schwachen PV-Tag (Tagesprognose), unabhängig vom Restprognose-Release.
+  Sonnige Tage behalten den Cap unverändert.
+
+### Nach dem Update
+HA neu starten. Auf schwachen PV-Tagen sollte die Phase morgens nicht mehr auf
+`morning_cap` hängen bleiben, solange der Tag als schwacher PV-Tag erkannt ist.
+
+---
+
 ## [0.3.18] – Morning-Cap weicht Akku-Priorität; Dashboard-Strategy; Wallbox-Netzschutz (2026-09-17)
 
 ### Behoben

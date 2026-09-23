@@ -1359,13 +1359,24 @@ def _decide_core(
     # would hand control back to E3DC and the device would charge to 100% on its own,
     # ignoring the cap. Convention: POWER_MODE_NORMAL + charge_power_limit=1 W blocks
     # charging while leaving discharge free, so the battery still covers the house load.
-    # Yields to Curtailment Guard and to Akku-Priorität (Schwacher-PV-Tag / unzureichende
-    # Restprognose): on weak-PV mornings the cap would otherwise export surplus while
-    # the battery stays capped — the exact failure mode the priority path exists for.
+    #
+    # Yields to Curtailment Guard and on weak-PV days. We yield on the *latched*
+    # low-yield flag (``_low_yield``), not just on the intraday-gated
+    # ``_battery_priority``: on a day whose *total* forecast is weak but whose
+    # *morning* is sunny, the remaining-forecast coverage gate can momentarily
+    # release the priority (``_low_yield_released``) and thereby re-enable the cap
+    # — so the morning surplus gets exported and the battery stays short when the
+    # afternoon clouds over. On a latched weak-PV day the midday PV peak is low, so
+    # the cap's purpose (leave headroom for midday PV / avoid curtailment) does not
+    # apply and blocking only causes the exact failure the low-yield path exists to
+    # prevent. ``_forecast_insufficient`` is included so the cap also yields when the
+    # remaining forecast cannot fill the battery even on non-latched days.
+    # (``_low_yield or _forecast_insufficient`` == ``_battery_priority or _low_yield``.)
+    _morning_cap_yields = _low_yield or _forecast_insufficient
     if (
         params.morning_cap_enabled
         and not curtailment_guard_active
-        and not _battery_priority
+        and not _morning_cap_yields
     ):
         hour_now = now.hour + now.minute / 60
         if hour_now < params.morning_cap_until_h and state.soc >= params.morning_cap_soc:

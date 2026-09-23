@@ -2452,6 +2452,53 @@ class TestMorningCap:
         assert result.battery_priority is True
         assert result.charge_power_limit == 5000
 
+    def test_low_yield_day_overrides_morning_cap_even_when_forecast_covers(self):
+        """Latched weak-PV day → Morning-Cap yields, even if the intraday remaining
+        forecast currently covers the need (priority released by coverage gate).
+
+        Regression for the sunny-morning/cloudy-afternoon case: the day total is
+        weak (→ low_yield latched), but the morning P10 remaining forecast is high
+        enough to release ``_battery_priority``. The cap must still yield, otherwise
+        the morning surplus is exported and the battery stays short in the afternoon.
+        """
+        params = MaestroParams(
+            inverter_power=12000,
+            max_charge_power=5000,
+            min_charge_power=300,
+            installed_kwp=20.0,
+            feed_in_limit_percent=70.0,
+            charge_threshold=15.0,
+            charge_target=100.0,
+            battery_capacity_kwh=20.0,
+            morning_cap_enabled=True,
+            morning_cap_soc=30.0,
+            morning_cap_until_h=9.0,
+            low_yield_priority_enabled=True,
+            low_yield_threshold=0.5,
+            low_yield_reference_kwh_per_kwp=5.5,
+            pv_forecast_enabled=True,
+            pv_forecast_safety_factor=1.2,
+            spreading_enabled=True,
+            ht_enabled=False,
+        )
+        # 41.7 / 110 ≈ 0.38 ≤ 0.5 → latched low-yield day.
+        # needed = (100-40)% × 20 kWh = 12 kWh; × safety 1.2 = 14.4 kWh min.
+        # remaining P10 = 30 kWh > 14.4 → coverage ≥ 1.0 → priority released,
+        # _forecast_insufficient False → _battery_priority would be False.
+        state = MaestroState(
+            soc=40.0,
+            pv_power=3000,
+            house_power=600,
+            grid_power=-2000,
+            battery_power=0,
+            pv_forecast_today_kwh=41.7,
+            pv_forecast_remaining_kwh=30.0,
+            pv_forecast_remaining_p10_kwh=30.0,
+        )
+        result = decide(state, params, _now(6, 1, 7, 0), regelung_aktiv=True)
+        assert result.phase != PHASE_MORNING_CAP
+        assert result.charge_power_limit != 1
+
     def test_sunny_day_keeps_morning_cap(self):
         """High PV forecast → no battery priority → Morning-Cap still blocks."""
         params = MaestroParams(
